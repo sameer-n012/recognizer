@@ -1,0 +1,11 @@
+# python src/index_files.py
+# python src/extract_frames.py
+# python src/person_detection.py
+# python src/face_detection.py
+# python src/build_entities.py
+# python src/embed_faces.py
+# python src/embed_bodies.py
+# python src/embed_clip.py
+# python src/fuse_embeddings.py
+# python src/cluster_entities.py
+# python src/refine_clusters.py
