@@ -1,30 +1,89 @@
 <!doctype html>
 <html lang="en">
-    <head>
-        <meta charset="UTF-8" />
-        <title>Person Clusters</title>
-        <link rel="stylesheet" href="/static/style.css" />
-    </head>
-    <body>
-        <div id="sidebar">
-            <div id="sidebar-title">
-                <h2>Clusters</h2>
-                <button
-                    id="refresh-button"
-                    title="Refresh Clusters"
-                    onclick="refreshClusters()"
-                >
-                    &#x21bb;
-                </button>
-            </div>
-            <ul id="cluster-list"></ul>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Person Cluster Insights</title>
+    <link rel="stylesheet" href="/static/style.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside id="sidebar">
+        <div class="sidebar-head">
+          <div>
+            <p class="eyebrow">Cluster dashboard</p>
+            <h2>Person Clusters</h2>
+          </div>
+          <button id="refresh-button" title="Refresh clusters">
+            <span>⟳</span>
+          </button>
         </div>
-
-        <div id="content">
-            <h2 id="cluster-title">Select a cluster</h2>
-            <div id="grid"></div>
+        <p id="metric-tag" class="metric-tag">Loading similarity metric…</p>
+        <div class="sidebar-scroll">
+          <ul id="cluster-list"></ul>
         </div>
+      </aside>
+      <main id="content">
+        <header class="cluster-header">
+          <div>
+            <p class="eyebrow" id="selected-cluster-name">Select a cluster</p>
+            <h1 id="cluster-title">Choose a cluster to inspect</h1>
+          </div>
+          <div class="cluster-pills">
+            <span id="cluster-size-pill" class="pill">Entities • –</span>
+            <span id="cluster-asset-pill" class="pill">Assets • –</span>
+          </div>
+        </header>
 
-        <script src="/static/app.js"></script>
-    </body>
+        <section id="cluster-summary-panel" class="panel">
+          <div class="panel-title">
+            <h2>Cluster summary</h2>
+            <p id="cluster-summary-description">
+              Select a cluster to reveal per-modality similarity trends and the
+              contributing assets.
+            </p>
+          </div>
+          <div class="summary-grid">
+            <article>
+              <p class="label">Entities</p>
+              <h3 id="cluster-size">–</h3>
+            </article>
+            <article>
+              <p class="label">Distinct assets</p>
+              <h3 id="cluster-assets">–</h3>
+            </article>
+            <article>
+              <p class="label">Asset mix</p>
+              <p id="asset-breakdown" class="muted">–</p>
+            </article>
+            <article>
+              <p class="label">Similarity metric</p>
+              <p id="metric-description" class="muted">–</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">
+            <h2>Per-modality similarity</h2>
+            <p class="muted"> averages relative to the fused cluster centroid </p>
+          </div>
+          <div id="modality-stats" class="modality-grid"></div>
+        </section>
+
+        <section class="panel full-panel">
+          <div class="panel-title">
+            <h2>Media &amp; similarity</h2>
+            <p class="muted">
+              Each card shows the asset, how many frames or faces were analyzed,
+              and the similarity score for every modality.
+            </p>
+          </div>
+          <div id="item-grid" class="cards-grid">
+            <p class="placeholder">No cluster selected yet.</p>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script src="/static/app.js"></script>
+  </body>
 </html>

@@ -31,43 +31,54 @@ def l2norm(x):
     return x / np.linalg.norm(x)
 
 
-def main(entities_dir, face_dir, body_dir, clip_dir, out_dir, weights):
+def main(
+    entities_dir: Path,
+    face_dir: Path,
+    body_dir: Path,
+    clip_dir: Path,
+    out_dir: Path,
+    weights: dict[str, dict[str, float]],
+) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    n = len(list(entities_dir.glob("*.json")))
+    entity_files = sorted(entities_dir.glob("*.json"))
+    total_entities = len(entity_files)
 
     for ent_file in tqdm(
-        entities_dir.glob("*.json"), desc="Fusing embeddings", unit="entity", total=n
+        entity_files, desc="Fusing embeddings", unit="entity", total=total_entities
     ):
         entity = json.loads(ent_file.read_text())
         eid = entity["entity_id"]
 
         face_path = face_dir / f"{eid}.npy"
         body_path = body_dir / f"{eid}.npy"
-        clip_path = clip_dir / f"{entity['asset_id']}.npy"
+        clip_path = clip_dir / f"{eid}.npy"
 
         face = np.load(face_path) if face_path.exists() else None
         body = np.load(body_path) if body_path.exists() else None
+        if not clip_path.exists():
+            logger.warning("Skipping %s because clip embedding is missing", eid)
+            continue
         clip = np.load(clip_path)
 
         if face is not None:
-            w = weights["face_present"]
+            weight_config = weights["face_present"]
         elif body is not None:
-            w = weights["no_face"]
+            weight_config = weights["no_face"]
         else:
-            w = weights["no_person"]
+            weight_config = weights["no_person"]
 
-        emb = 0
+        emb = np.zeros_like(clip)
         if face is not None:
-            emb += w["face"] * face
+            emb += weight_config["face"] * face
         if body is not None:
-            emb += w["body"] * body
-        emb += w["clip"] * clip
+            emb += weight_config["body"] * body
+        emb += weight_config["clip"] * clip
 
         emb = l2norm(emb)
         np.save(out_dir / f"{eid}.npy", emb)
 
-        logger.info(f"Fused embedding for entity {eid}")
+        logger.info("Fused embedding for entity %s", eid)
 
     print("Fusion complete")
     logger.info("Fusion complete")
@@ -89,19 +100,19 @@ if __name__ == "__main__":
 
     weights = {
         "face_present": {
-            "face": ap.parse_args().face_weights[0],
-            "body": ap.parse_args().face_weights[1],
-            "clip": ap.parse_args().face_weights[2],
+            "face": args.face_weights[0],
+            "body": args.face_weights[1],
+            "clip": args.face_weights[2],
         },
         "no_face": {
-            "face": ap.parse_args().no_face_weights[0],
-            "body": ap.parse_args().no_face_weights[1],
-            "clip": ap.parse_args().no_face_weights[2],
+            "face": args.no_face_weights[0],
+            "body": args.no_face_weights[1],
+            "clip": args.no_face_weights[2],
         },
         "no_person": {
-            "face": ap.parse_args().no_person_weights[0],
-            "body": ap.parse_args().no_person_weights[1],
-            "clip": ap.parse_args().no_person_weights[2],
+            "face": args.no_person_weights[0],
+            "body": args.no_person_weights[1],
+            "clip": args.no_person_weights[2],
         },
     }
 

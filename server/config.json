@@ -1,0 +1,17 @@
+{
+  "assignments_path": "data/clusters/refined/assignments_refined.parquet",
+  "entities_dir": "data/entities",
+  "file_index": "cache/file_index.parquet",
+  "embeddings": {
+    "face": "data/embeddings/face",
+    "body": "data/embeddings/body",
+    "clip": "data/embeddings/clip",
+    "fused": "data/embeddings/fused"
+  },
+  "similarity": {
+    "metric": "manhattan",
+    "transform": "reciprocal",
+    "scale": 1.0,
+    "epsilon": 1e-6
+  }
+}

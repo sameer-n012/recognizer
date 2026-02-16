@@ -3,6 +3,9 @@ logs/
 cache/
 models/
 YOLOX/
+ByteTrack/
+
+scratch/
 
 .env
 *.log

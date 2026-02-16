@@ -5,6 +5,7 @@ import logging
 from collections import defaultdict
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, Iterable, Sequence
 
 import numpy as np
 import pandas as pd
@@ -12,6 +13,9 @@ from tqdm import tqdm
 from yolox.tracker.byte_tracker import BYTETracker
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_MIN_FRAMES_PER_ENTITY = 3
+IOU_MATCH_THRESHOLD = 0.2
 
 
 def make_entity_id(asset_id, track_id):
@@ -49,7 +53,35 @@ def bbox_iou(box_a, box_b):
     return inter_area / union_area
 
 
-def main(index_path, persons_dir, faces_dir, out_dir, min_frames_per_entity):
+def match_detection_to_track(
+    track_tlbr: Sequence[float],
+    detection_boxes: Sequence[Sequence[float]],
+    used_indices: set[int],
+    min_iou: float = IOU_MATCH_THRESHOLD,
+) -> int | None:
+    """
+    Return the detection index whose bounding box has the highest IoU with the
+    current track bounding box, skipping already assigned detections.
+    """
+    best_idx: int | None = None
+    best_iou = min_iou
+    for idx, det_box in enumerate(detection_boxes):
+        if idx in used_indices:
+            continue
+        current_iou = bbox_iou(track_tlbr, det_box)
+        if current_iou > best_iou:
+            best_iou = current_iou
+            best_idx = idx
+    return best_idx
+
+
+def main(
+    index_path: Path,
+    persons_dir: Path,
+    faces_dir: Path,
+    out_dir: Path,
+    min_frames_per_entity: int,
+) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_parquet(index_path)
@@ -87,14 +119,14 @@ def main(index_path, persons_dir, faces_dir, out_dir, min_frames_per_entity):
                 faces = json.load(f)["faces"]
 
         faces_by_det = defaultdict(list)
-        for f in faces:
-            faces_by_det[f["person_det_index"]].append(f)
+        for face in faces:
+            faces_by_det[face["person_det_index"]].append(face)
 
         detections_by_frame = load_detections_by_frame(persons)
 
         if row["type"] == "image":
-            for i, det in enumerate(persons):
-                eid = make_entity_id(asset_id, i)
+            for det_index, det in enumerate(persons):
+                eid = make_entity_id(asset_id, det_index)
                 payload = {
                     "entity_id": eid,
                     "asset_id": asset_id,
@@ -103,10 +135,10 @@ def main(index_path, persons_dir, faces_dir, out_dir, min_frames_per_entity):
                         {
                             "source": det["source"],
                             "person_bbox": det["bbox"],
-                            "faces": faces_by_det.get(i, []),
+                            "faces": faces_by_det.get(det_index, []),
                         }
                     ],
-                    "has_face": i in faces_by_det,
+                    "has_face": bool(faces_by_det.get(det_index)),
                 }
                 with open(out_dir / f"{eid}.json", "w") as f:
                     json.dump(payload, f)
@@ -115,13 +147,10 @@ def main(index_path, persons_dir, faces_dir, out_dir, min_frames_per_entity):
         tracks = defaultdict(list)
         frame_names = sorted(detections_by_frame.keys())
 
-        # tracker.reset()
+        for frame_name in frame_names:
+            detections = detections_by_frame[frame_name]
 
-        for frame_idx, frame_name in enumerate(frame_names):
-            dets = detections_by_frame[frame_name]
-
-            if not dets:
-                # tracker.update(np.empty((0, 5)))
+            if not detections:
                 tracker.update(
                     np.empty((0, 5), dtype=np.float32),
                     img_info=img_size,
@@ -129,56 +158,64 @@ def main(index_path, persons_dir, faces_dir, out_dir, min_frames_per_entity):
                 )
                 continue
 
-            boxes = []
-            det_indices = []
+            tlwh_boxes = []
+            detection_boxes: list[list[float]] = []
 
-            for det_idx, det in dets:
+            for det_index, det in detections:
                 x1, y1, x2, y2 = det["bbox"]
-                conf = det["confidence"]
-                boxes.append([x1, y1, x2 - x1, y2 - y1, conf])
-                det_indices.append(det_idx)
+                confidence = float(det["confidence"])
+                tlwh_boxes.append([x1, y1, x2 - x1, y2 - y1, confidence])
+                detection_boxes.append([x1, y1, x2, y2])
 
-            boxes = np.asarray(boxes, dtype=np.float32)
-            online_targets = tracker.update(boxes, img_size, img_size)
+            tlwh_boxes = np.asarray(tlwh_boxes, dtype=np.float32)
+            online_targets = tracker.update(tlwh_boxes, img_size, img_size)
+            used_indices: set[int] = set()
 
-            for t_idx, t in enumerate(online_targets):
-                if t.tlwh is None:
+            for target in online_targets:
+                if target.tlwh is None:
                     continue
 
-                track_id = t.track_id
-                tlwh = t.tlwh
-                x1, y1, w, h = tlwh
-                x2, y2 = x1 + w, y1 + h
+                match_idx = match_detection_to_track(
+                    target.tlbr, detection_boxes, used_indices
+                )
+                if match_idx is None:
+                    continue
 
-                # find closest detection (IoU not needed; ByteTrack keeps order)
-                det_idx = det_indices[t_idx]
+                det_index, detection = detections[match_idx]
+                used_indices.add(match_idx)
 
-                tracks[track_id].append(
+                tracks[target.track_id].append(
                     {
                         "source": frame_name,
-                        "person_bbox": [x1, y1, x2, y2],
-                        "faces": faces_by_det.get(det_idx, []),
+                        "person_bbox": detection_boxes[match_idx],
+                        "faces": faces_by_det.get(det_index, []),
                     }
                 )
 
-        for track_id, frames in tracks.items():
-            if len(frames) < min_frames_per_entity:
-                continue
+        retained_tracks = {
+            tid: frames
+            for tid, frames in tracks.items()
+            if len(frames) >= min_frames_per_entity
+        }
 
+        for track_id, frames in retained_tracks.items():
             eid = make_entity_id(asset_id, track_id)
-
             payload = {
                 "entity_id": eid,
                 "asset_id": asset_id,
                 "type": "video",
                 "frames": frames,
-                "has_face": any(len(f["faces"]) > 0 for f in frames),
+                "has_face": any(len(frame["faces"]) > 0 for frame in frames),
             }
-
             with open(out_dir / f"{eid}.json", "w") as f:
                 json.dump(payload, f)
 
-        logger.info(f"Processed asset: {asset_id}, entities found: {len(tracks)}")
+        logger.info(
+            "Processed %s: %d tracks retained (%d dropped)",
+            asset_id,
+            len(retained_tracks),
+            len(tracks) - len(retained_tracks),
+        )
 
     logger.info("Entity construction (ByteTrack) complete")
 
@@ -189,7 +226,11 @@ if __name__ == "__main__":
     ap.add_argument("--persons-dir", type=Path, default=Path("data/detections/persons"))
     ap.add_argument("--faces-dir", type=Path, default=Path("data/detections/faces"))
     ap.add_argument("--out-dir", type=Path, default=Path("data/entities"))
-    ap.add_argument("--min-frames-per-entity", type=int, default=3)
+    ap.add_argument(
+        "--min-frames-per-entity",
+        type=int,
+        default=DEFAULT_MIN_FRAMES_PER_ENTITY,
+    )
     ap.add_argument("--log-file", type=Path, default=Path("logs/build_entities.log"))
     args = ap.parse_args()
 
