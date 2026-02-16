@@ -91,8 +91,9 @@ def main(
                 )
 
     assignments.to_parquet(out_dir / "assignments_refined.parquet", index=False)
+    merged_map_json = {int(k): int(v) for k, v in merged_map.items()}
     with open(out_dir / "merges.json", "w") as f:
-        json.dump(merged_map, f)
+        json.dump(merged_map_json, f)
 
     print("Cluster refinement complete")
     print(f"Refined assignments → {out_dir / 'assignments_refined.parquet'}")

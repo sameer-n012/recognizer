@@ -1,0 +1,80 @@
+body {
+    margin: 0;
+    font-family:
+        system-ui,
+        -apple-system,
+        BlinkMacSystemFont;
+    display: flex;
+    height: 100vh;
+    background: #f6f7f9;
+}
+
+#sidebar {
+    width: 240px;
+    background: #1e1e2f;
+    color: white;
+    padding: 16px;
+    overflow-y: auto;
+}
+
+#sidebar h2 {
+    margin: 0;
+}
+
+#sidebar-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+#refresh-button {
+    background: #3a3a55;
+    border: none;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+#cluster-list {
+    list-style: none;
+    padding: 0;
+}
+
+#cluster-list li {
+    padding: 8px;
+    margin-bottom: 6px;
+    background: #2a2a3d;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+#cluster-list li:hover {
+    background: #3a3a55;
+}
+
+#content {
+    flex: 1;
+    padding: 20px;
+    overflow-y: auto;
+}
+
+#grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 16px;
+}
+
+.card {
+    background: white;
+    border-radius: 10px;
+    padding: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+    cursor: pointer;
+}
+
+.card img,
+.card video {
+    width: 100%;
+    border-radius: 8px;
+}

@@ -2,6 +2,7 @@ data/
 logs/
 cache/
 models/
+YOLOX/
 
 .env
 *.log

@@ -34,8 +34,10 @@ def l2norm(x):
 def main(entities_dir, face_dir, body_dir, clip_dir, out_dir, weights):
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    n = len(list(entities_dir.glob("*.json")))
+
     for ent_file in tqdm(
-        entities_dir.glob("*.json"), desc="Fusing embeddings", unit="entity"
+        entities_dir.glob("*.json"), desc="Fusing embeddings", unit="entity", total=n
     ):
         entity = json.loads(ent_file.read_text())
         eid = entity["entity_id"]
@@ -79,9 +81,7 @@ if __name__ == "__main__":
     ap.add_argument("--clip-dir", type=Path, default=Path("data/embeddings/clip"))
     ap.add_argument("--out-dir", type=Path, default=Path("data/embeddings/fused"))
     ap.add_argument("--log-file", type=Path, default=Path("logs/fuse_embeddings.log"))
-    ap.add_argument(
-        "--face-present-weights", nargs=3, type=float, default=[0.6, 0.25, 0.15]
-    )
+    ap.add_argument("--face-weights", nargs=3, type=float, default=[0.6, 0.25, 0.15])
     ap.add_argument("--no-face-weights", nargs=3, type=float, default=[0.0, 0.65, 0.35])
     ap.add_argument("--no-person-weights", nargs=3, type=float, default=[0.0, 0.0, 1.0])
 

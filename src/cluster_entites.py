@@ -9,7 +9,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MIN_CLUSTER_SIZE = 5
+DEFAULT_MIN_CLUSTER_SIZE = 3
 DEFAULT_MIN_SAMPLES = 3
 
 
@@ -29,7 +29,10 @@ def main(fused_dir: Path, out_dir: Path, min_cluster_size, min_samples):
 
     # Run HDBSCAN
     clusterer = hdbscan.HDBSCAN(
-        min_cluster_size=min_cluster_size, min_samples=min_samples, metric="euclidean"
+        min_cluster_size=min_cluster_size,
+        min_samples=min_samples,
+        metric="manhattan",
+        cluster_selection_method="eom",
     )
     labels = clusterer.fit_predict(embeddings)
 
