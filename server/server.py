@@ -8,13 +8,14 @@ from typing import Any, Dict, Iterable
 
 import numpy as np
 import pandas as pd
-from flask import Flask, jsonify, render_template, send_file
+from flask import Flask, jsonify, redirect, render_template, request, send_file, url_for
 from readerwriterlock import rwlock
 
 logger = logging.getLogger(__name__)
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
+# CONFIG_PATH = Path(__file__).resolve().parent / "config.json"
+CONFIG_PATH = PROJECT_ROOT / "server" / "config.json"
 TEMPLATE_DIR = Path("templates")
 DATA_DIR = PROJECT_ROOT / "data"
 CACHE_DIR = PROJECT_ROOT / "cache"
@@ -29,18 +30,28 @@ def load_config() -> Dict[str, Any]:
 
     resolved: Dict[str, Any] = dict(raw)
     resolved["assignments_path"] = PROJECT_ROOT / Path(raw["assignments_path"])
+    overrides_path = raw.get("overrides_path")
+    resolved["overrides_path"] = (
+        PROJECT_ROOT / Path(overrides_path) if overrides_path else None
+    )
     resolved["file_index"] = PROJECT_ROOT / Path(raw["file_index"])
     resolved["entities_dir"] = PROJECT_ROOT / Path(raw["entities_dir"])
     resolved["embeddings"] = {
         key: PROJECT_ROOT / Path(value) for key, value in raw["embeddings"].items()
     }
-    similarity = raw.get("similarity", {})
+    similarity_path = PROJECT_ROOT / Path(
+        raw.get("similarity_config", "configs/similarity.json")
+    )
+    if not similarity_path.exists():
+        raise FileNotFoundError(f"Similarity config missing: {similarity_path}")
+    similarity_raw = json.loads(similarity_path.read_text())
     resolved["similarity"] = {
-        "metric": similarity.get("metric", "manhattan"),
-        "transform": similarity.get("transform", "reciprocal"),
-        "scale": float(similarity.get("scale", 1.0)),
-        "epsilon": float(similarity.get("epsilon", 1e-6)),
+        "metric": similarity_raw.get("metric", "cosine"),
+        "transform": similarity_raw.get("transform", "reciprocal"),
+        "scale": float(similarity_raw.get("scale", 1.0)),
+        "epsilon": float(similarity_raw.get("epsilon", 1e-6)),
     }
+    resolved["similarity_config_path"] = similarity_path
     return resolved
 
 
@@ -51,6 +62,8 @@ context = {
     "asset_lookup": {},
     "clusters_overview": [],
     "cluster_details": {},
+    "cluster_centroids": {},
+    "overrides": None,
     "similarity_metric": None,
     "config": load_config(),
     "lock": rwlock.RWLockFairD(),
@@ -134,7 +147,11 @@ def build_cluster_views(
     embeddings: Dict[str, Dict[str, np.ndarray]],
     asset_lookup: Dict[str, str],
     similarity_cfg: Dict[str, Any],
-) -> tuple[list[Dict[str, Any]], Dict[int, Dict[str, Any]]]:
+) -> tuple[
+    list[Dict[str, Any]],
+    Dict[int, Dict[str, Any]],
+    Dict[int, Dict[str, np.ndarray]],
+]:
     cluster_members: Dict[int, list[str]] = defaultdict(list)
     for _, row in assignments.iterrows():
         cluster_id = int(row["cluster_id"])
@@ -232,15 +249,35 @@ def build_cluster_views(
         )
         cluster_details[cluster_id] = {"summary": summary, "items": items}
 
-    return clusters_overview, cluster_details
+    return clusters_overview, cluster_details, centroids
+
+
+def load_overrides(overrides_path: Path | None) -> pd.DataFrame:
+    if overrides_path is None or not overrides_path.exists():
+        return pd.DataFrame(columns=["entity_id", "cluster_id"])
+    return pd.read_parquet(overrides_path)
+
+
+def apply_overrides(assignments: pd.DataFrame, overrides: pd.DataFrame) -> pd.DataFrame:
+    if overrides.empty:
+        return assignments
+    updates = overrides.drop_duplicates(subset=["entity_id"], keep="last")
+    merged = assignments.merge(
+        updates, on="entity_id", how="left", suffixes=("", "_override")
+    )
+    merged["cluster_id"] = merged["cluster_id_override"].fillna(merged["cluster_id"])
+    return merged.drop(columns=["cluster_id_override"])
 
 
 def refresh_context():
     with context["lock"].gen_wlock():
         config = context["config"]
         assignments = pd.read_parquet(config["assignments_path"])
+        overrides = load_overrides(config["overrides_path"])
+        assignments = apply_overrides(assignments, overrides)
         file_index = pd.read_parquet(config["file_index"])
         context["assignments"] = assignments
+        context["overrides"] = overrides
         context["file_index"] = file_index
         context["asset_lookup"] = {
             row["asset_id"]: row["path"] for _, row in file_index.iterrows()
@@ -250,7 +287,7 @@ def refresh_context():
             context["entities"].keys(), config["embeddings"]
         )
 
-        clusters_overview, cluster_details = build_cluster_views(
+        clusters_overview, cluster_details, centroids = build_cluster_views(
             assignments,
             context["entities"],
             embedding_index,
@@ -260,6 +297,7 @@ def refresh_context():
 
         context["clusters_overview"] = clusters_overview
         context["cluster_details"] = cluster_details
+        context["cluster_centroids"] = centroids
         context["similarity_metric"] = {
             "metric": config["similarity"]["metric"],
             "transform": config["similarity"]["transform"],
@@ -278,7 +316,12 @@ refresh_context()
 
 @app.route("/")
 def index():
-    logger.info("Index page requested")
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/dashboard")
+def dashboard():
+    logger.info("Dashboard page requested")
     return render_template("index.html")
 
 
@@ -294,6 +337,8 @@ def get_clusters():
     with context["lock"].gen_rlock():
         clusters = context["clusters_overview"]
         metric_info = context["similarity_metric"]
+
+    clusters = sorted(clusters, key=lambda c: c["size"], reverse=True)
     logger.info("Clusters overview requested (%d clusters)", len(clusters))
     return jsonify({"clusters": clusters, "similarity_metric": metric_info})
 
@@ -307,6 +352,104 @@ def get_cluster(cluster_id: int):
         return jsonify({"error": "Cluster not found"}), 404
     logger.info("Cluster %d detail requested", cluster_id)
     return jsonify(detail)
+
+
+@app.route("/api/cluster/<int:cluster_id>/suggestions")
+def get_cluster_suggestions(cluster_id: int):
+    limit = int(request.args.get("limit", 8))
+    with context["lock"].gen_rlock():
+        centroids = context["cluster_centroids"]
+        similarity_cfg = context["config"]["similarity"]
+
+    source_centroids = centroids.get(cluster_id, {})
+    source = source_centroids.get("fused")
+    if source is None:
+        return jsonify({"clusters": []})
+
+    scored = []
+    for cid, centroid_map in centroids.items():
+        if cid == cluster_id:
+            continue
+        target = centroid_map.get("fused")
+        if target is None:
+            continue
+        distance = compute_distance(
+            source,
+            target,
+            similarity_cfg["metric"],
+            similarity_cfg["epsilon"],
+        )
+        similarity = distance_to_similarity(distance, similarity_cfg)
+        scored.append({"cluster_id": cid, "similarity": similarity})
+
+    scored.sort(key=lambda item: item["similarity"], reverse=True)
+    return jsonify({"clusters": scored[:limit]})
+
+
+@app.route("/api/cluster/edit", methods=["POST"])
+def edit_cluster():
+    payload = request.get_json(silent=True) or {}
+    action = payload.get("action")
+    if not action:
+        return jsonify({"error": "Missing action"}), 400
+
+    with context["lock"].gen_wlock():
+        config = context["config"]
+        if config["overrides_path"] is None:
+            return jsonify({"error": "Overrides path not configured"}), 500
+        assignments = context["assignments"].copy()
+        overrides = load_overrides(config["overrides_path"])
+        overrides_map = {
+            row["entity_id"]: int(row["cluster_id"]) for _, row in overrides.iterrows()
+        }
+
+        if action == "move_entities":
+            entity_ids = payload.get("entity_ids", [])
+            target_cluster = payload.get("target_cluster_id")
+            if not entity_ids or target_cluster is None:
+                return jsonify(
+                    {"error": "Missing entity_ids or target_cluster_id"}
+                ), 400
+            for entity_id in entity_ids:
+                overrides_map[str(entity_id)] = int(target_cluster)
+        elif action == "merge_clusters":
+            source_cluster = payload.get("source_cluster_id")
+            target_cluster = payload.get("target_cluster_id")
+            if source_cluster is None or target_cluster is None:
+                return (
+                    jsonify(
+                        {"error": "Missing source_cluster_id or target_cluster_id"}
+                    ),
+                    400,
+                )
+            source_entities = assignments[
+                assignments["cluster_id"] == int(source_cluster)
+            ]["entity_id"].tolist()
+            for entity_id in source_entities:
+                overrides_map[str(entity_id)] = int(target_cluster)
+        elif action == "split_cluster":
+            entity_ids = payload.get("entity_ids", [])
+            source_cluster = payload.get("source_cluster_id")
+            if not entity_ids or source_cluster is None:
+                return jsonify(
+                    {"error": "Missing entity_ids or source_cluster_id"}
+                ), 400
+            max_cluster = int(assignments["cluster_id"].max())
+            new_cluster_id = max_cluster + 1
+            for entity_id in entity_ids:
+                overrides_map[str(entity_id)] = new_cluster_id
+            payload["new_cluster_id"] = new_cluster_id
+        else:
+            return jsonify({"error": f"Unknown action: {action}"}), 400
+
+        overrides_out = pd.DataFrame(
+            [{"entity_id": k, "cluster_id": v} for k, v in overrides_map.items()]
+        )
+        overrides_out.to_parquet(config["overrides_path"], index=False)
+        context["overrides"] = overrides_out
+
+    refresh_context()
+    return jsonify({"status": "ok", "details": payload})
 
 
 @app.route("/media/<asset_id>")
