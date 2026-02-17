@@ -24,7 +24,10 @@ def resolve(cli_value: Any, config_value: Any, default: Any = None) -> Any:
     return default
 
 
-def resolve_path(value: Any) -> Path | None:
+def resolve_path(value: Any, base_dir: Path | None = None) -> Path | None:
     if value is None:
         return None
-    return Path(value)
+    path = Path(value)
+    if path.is_absolute() or base_dir is None:
+        return path
+    return base_dir / path

@@ -25,36 +25,36 @@ DEFAULT_PORT = 5033
 app = Flask(__name__, template_folder=TEMPLATE_DIR, static_folder="static")
 
 
-def load_config() -> Dict[str, Any]:
+def load_config(data_dir: Path | None = None) -> Dict[str, Any]:
     with CONFIG_PATH.open() as cfg_file:
         raw = json.load(cfg_file)
 
     resolved: Dict[str, Any] = dict(raw)
-    resolved["assignments_path"] = PROJECT_ROOT / Path(raw["assignments_path"])
+    base_data_dir = data_dir or PROJECT_ROOT
+    resolved["assignments_path"] = base_data_dir / Path(raw["assignments_path"])
     overrides_path = raw.get("overrides_path")
     resolved["overrides_path"] = (
-        PROJECT_ROOT / Path(overrides_path) if overrides_path else None
+        base_data_dir / Path(overrides_path) if overrides_path else None
     )
-    resolved["file_index"] = PROJECT_ROOT / Path(raw["file_index"])
-    resolved["entities_dir"] = PROJECT_ROOT / Path(raw["entities_dir"])
+    resolved["file_index"] = base_data_dir / Path(raw["file_index"])
+    resolved["entities_dir"] = base_data_dir / Path(raw["entities_dir"])
     resolved["embeddings"] = {
-        key: PROJECT_ROOT / Path(value) for key, value in raw["embeddings"].items()
+        key: base_data_dir / Path(value) for key, value in raw["embeddings"].items()
     }
-    similarity_path = PROJECT_ROOT / Path(
-        raw.get("similarity_config", "configs/similarity.json")
-    )
-    if not similarity_path.exists():
-        raise FileNotFoundError(f"Similarity config missing: {similarity_path}")
-    similarity_raw = json.loads(similarity_path.read_text())
-    similarity_section = similarity_raw.get("similarity", similarity_raw)
+    similarity_section = raw.get("similarity", raw.get("similarity", {}))
     resolved["similarity"] = {
         "metric": similarity_section.get("metric", "cosine"),
         "transform": similarity_section.get("transform", "reciprocal"),
         "scale": float(similarity_section.get("scale", 1.0)),
         "epsilon": float(similarity_section.get("epsilon", 1e-6)),
     }
-    resolved["similarity_config_path"] = similarity_path
+    resolved["similarity_config_path"] = CONFIG_PATH
     return resolved
+
+
+def ensure_data_layout(base: Path) -> None:
+    for sub in ("data", "cache", "logs"):
+        (base / sub).mkdir(parents=True, exist_ok=True)
 
 
 context = {
@@ -594,6 +594,12 @@ if __name__ == "__main__":
     ap.add_argument(
         "--log-file", type=Path, default=PROJECT_ROOT / "logs" / "server.log"
     )
+    ap.add_argument(
+        "--data-dir",
+        type=Path,
+        default=PROJECT_ROOT / "data",
+        help="Base directory for data/cache/logs",
+    )
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     args = ap.parse_args()
 
@@ -603,6 +609,10 @@ if __name__ == "__main__":
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(message)s",
     )
+
+    ensure_data_layout(args.data_dir)
+    context["config"] = load_config(args.data_dir)
+    refresh_context()
 
     logger.info("Starting server")
     app.run(debug=True, host="127.0.0.1", port=args.port)
