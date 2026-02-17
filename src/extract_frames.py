@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MAX_FRAMES = 150
+DEFAULT_MAX_FRAMES = 60
 DEFAULT_MAX_FRAME_RATE = 2.0  # frames per second
 
 
@@ -26,7 +26,7 @@ def extract_frames(
             "-select_streams",
             "v:0",
             "-show_entries",
-            "stream=duration",
+            "format=duration:stream=duration",
             "-of",
             "json",
             str(video_path),
@@ -34,12 +34,16 @@ def extract_frames(
     )
 
     probe_json = json.loads(probe)
+    duration = 0
     if "streams" not in probe_json or len(probe_json["streams"]) == 0:
         raise ValueError(f"No video streams found in file: {video_path}")
-    elif "duration" not in probe_json["streams"][0]:
-        raise ValueError(f"No duration found for video stream in file: {video_path}")
 
-    duration = float(json.loads(probe)["streams"][0]["duration"])
+    if "duration" in probe_json["streams"][0]:
+        duration = float(json.loads(probe)["streams"][0]["duration"])
+    elif "duration" in probe_json["format"]:
+        duration = float(json.loads(probe)["format"]["duration"])
+    else:
+        raise ValueError(f"No duration found for video stream in file: {video_path}")
 
     if duration <= 0:
         raise ValueError(f"Invalid video duration ({duration}) for file: {video_path}")
@@ -83,13 +87,13 @@ def main(index_path: Path, frames_root: Path, max_frames: int, max_frame_rate: f
             n = extract_frames(Path(row["path"]), out_dir, max_frames, max_frame_rate)
             row["num_frames"] = n
             logger.info(
-                f"Extracted frames for video: {row['path']} (ID: {row['asset_id']})"
+                f"Extracted {n} frames for video: {row['path']} (ID: {row['asset_id']})"
             )
         except Exception:
             failures += 1
             logger.error(
                 f"Failed to extract frames for video: {row['path']} (ID: {row['asset_id']})",
-                exc_info=False,
+                exc_info=True,
             )
 
     df.to_parquet(index_path, index=False)

@@ -10,14 +10,14 @@ logger = logging.getLogger(__name__)
 
 FUSION_WEIGHTS_CONFIG = {
     "face_present": {
-        "face": 0.6,
-        "body": 0.25,
-        "clip": 0.15,
+        "face": 0.9,
+        "body": 0.05,
+        "clip": 0.05,
     },
     "no_face": {
         "face": 0.0,
-        "body": 0.65,
-        "clip": 0.35,
+        "body": 0.6,
+        "clip": 0.4,
     },
     "no_person": {
         "face": 0.0,

@@ -15,12 +15,38 @@ DEFAULT_FACE_DET_CONF_THRESHOLD = 0.6
 INSIGHTFACE_ROOT = "./models/insightface"
 
 
+def clamp_bbox(bbox, width, height):
+    x1, y1, x2, y2 = bbox
+    x1 = max(0.0, min(float(x1), float(width)))
+    y1 = max(0.0, min(float(y1), float(height)))
+    x2 = max(0.0, min(float(x2), float(width)))
+    y2 = max(0.0, min(float(y2), float(height)))
+    if x2 <= x1 or y2 <= y1:
+        return None
+    return [x1, y1, x2, y2]
+
+
+def offset_bbox(bbox, offset_xy):
+    ox, oy = offset_xy
+    x1, y1, x2, y2 = bbox
+    return [x1 + ox, y1 + oy, x2 + ox, y2 + oy]
+
+
 def crop(img, bbox):
     x1, y1, x2, y2 = map(int, bbox)
     return img[y1:y2, x1:x2]
 
 
-def main(index_path, frames_dir, persons_dir, out_dir, det_size, conf_threshold):
+def main(
+    index_path,
+    frames_dir,
+    persons_dir,
+    out_dir,
+    det_size,
+    conf_threshold,
+    save_embeddings,
+    no_cache=False,
+):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     app = FaceAnalysis(
@@ -35,7 +61,7 @@ def main(index_path, frames_dir, persons_dir, out_dir, det_size, conf_threshold)
     ):
         asset_id = row["asset_id"]
         out_path = out_dir / f"{asset_id}.json"
-        if out_path.exists():
+        if out_path.exists() and not no_cache:
             continue
 
         persons_path = persons_dir / f"{asset_id}.json"
@@ -49,7 +75,8 @@ def main(index_path, frames_dir, persons_dir, out_dir, det_size, conf_threshold)
 
         if row["type"] == "image":
             img = cv2.imread(row["path"])
-            sources = [(None, img)]
+            image_name = Path(row["path"]).name
+            sources = [(image_name, img)]
         else:
             frame_root = frames_dir / asset_id
             sources = []
@@ -57,11 +84,17 @@ def main(index_path, frames_dir, persons_dir, out_dir, det_size, conf_threshold)
                 sources.append((frame.name, cv2.imread(str(frame))))
 
         for src_name, img in sources:
+            if img is None:
+                continue
+            height, width = img.shape[:2]
             for idx, det in enumerate(persons):
                 if det["source"] != src_name:
                     continue
 
-                person_crop = crop(img, det["bbox"])
+                person_bbox = clamp_bbox(det["bbox"], width, height)
+                if person_bbox is None:
+                    continue
+                person_crop = crop(img, person_bbox)
                 if person_crop.size == 0:
                     continue
 
@@ -70,14 +103,22 @@ def main(index_path, frames_dir, persons_dir, out_dir, det_size, conf_threshold)
                     if face.det_score < conf_threshold:
                         continue
 
-                    faces_out.append(
-                        {
-                            "source": src_name,
-                            "person_det_index": idx,
-                            "bbox": face.bbox.tolist(),
-                            "confidence": float(face.det_score),
-                        }
+                    abs_bbox = offset_bbox(
+                        face.bbox.tolist(), (person_bbox[0], person_bbox[1])
                     )
+                    abs_bbox = clamp_bbox(abs_bbox, width, height)
+                    if abs_bbox is None:
+                        continue
+
+                    payload = {
+                        "source": src_name,
+                        "person_det_index": idx,
+                        "bbox": abs_bbox,
+                        "confidence": float(face.det_score),
+                    }
+                    if save_embeddings and getattr(face, "embedding", None) is not None:
+                        payload["embedding"] = face.embedding.tolist()
+                    faces_out.append(payload)
 
         with open(out_path, "w") as f:
             json.dump({"asset_id": asset_id, "faces": faces_out}, f)
@@ -95,6 +136,12 @@ if __name__ == "__main__":
     ap.add_argument("--persons-dir", type=Path, default=Path("data/detections/persons"))
     ap.add_argument("--out-dir", type=Path, default=Path("data/detections/faces"))
     ap.add_argument("--log-file", type=Path, default=Path("logs/face_detection.log"))
+    ap.add_argument("--no-cache", action="store_true")
+    ap.add_argument(
+        "--no-embeddings",
+        action="store_true",
+        help="Do not store face embeddings in detections output",
+    )
     ap.add_argument(
         "--det-size",
         type=int,
@@ -124,6 +171,8 @@ if __name__ == "__main__":
         args.out_dir,
         tuple(args.det_size),
         args.conf_threshold,
+        not args.no_embeddings,
+        args.no_cache,
     )
 
     logger.info("Face detection process completed")

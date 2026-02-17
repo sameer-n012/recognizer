@@ -10,3 +10,5 @@ scratch/
 .env
 *.log
 *.pt
+
+test_data/

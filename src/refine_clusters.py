@@ -5,8 +5,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+from sklearn.cluster import AgglomerativeClustering
 from sklearn.metrics.pairwise import cosine_similarity
-from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -14,11 +14,86 @@ DEFAULT_MERGE_THRESHOLD = 0.85
 DEFAULT_NOISE_THRESHOLD = 0.8
 
 
+def load_similarity_config(config_path: Path) -> dict[str, float]:
+    if not config_path.exists():
+        raise FileNotFoundError(f"Similarity config missing: {config_path}")
+    payload = json.loads(config_path.read_text())
+    return {
+        "metric": payload.get("metric", "cosine"),
+        "merge_threshold": float(
+            payload.get("merge_threshold", DEFAULT_MERGE_THRESHOLD)
+        ),
+        "noise_threshold": float(
+            payload.get("noise_threshold", DEFAULT_NOISE_THRESHOLD)
+        ),
+        "small_cluster_threshold": float(payload.get("small_cluster_threshold", 0.7)),
+        "small_cluster_max_size": int(payload.get("small_cluster_max_size", 2)),
+        "small_to_large_threshold": float(payload.get("small_to_large_threshold", 0.8)),
+        "large_cluster_max_size": int(payload.get("large_cluster_max_size", 60)),
+        "large_cluster_distance_threshold": float(
+            payload.get("large_cluster_distance_threshold", 0.2)
+        ),
+        "min_cluster_size": int(payload.get("min_cluster_size", 2)),
+        "min_cluster_force_threshold": float(
+            payload.get("min_cluster_force_threshold", 0.55)
+        ),
+        "force_reassign_singletons": bool(
+            payload.get("force_reassign_singletons", False)
+        ),
+        "force_reassign_noise": bool(payload.get("force_reassign_noise", False)),
+    }
+
+
+def split_large_cluster(
+    embeddings: np.ndarray, metric: str, distance_threshold: float
+) -> np.ndarray:
+    if embeddings.shape[0] <= 1:
+        return np.zeros(embeddings.shape[0], dtype=int)
+    clusterer = AgglomerativeClustering(
+        n_clusters=None,
+        distance_threshold=distance_threshold,
+        metric=metric,
+        linkage="average",
+    )
+    return clusterer.fit_predict(embeddings)
+
+
+def build_merge_map(
+    cluster_ids: list[int],
+    centroid_matrix: np.ndarray,
+    threshold: float,
+) -> dict[int, int]:
+    adjacency: dict[int, set[int]] = {cid: set() for cid in cluster_ids}
+    sim_matrix = cosine_similarity(centroid_matrix)
+    n = len(cluster_ids)
+    for i in range(n):
+        for j in range(i + 1, n):
+            if sim_matrix[i, j] >= threshold:
+                adjacency[cluster_ids[i]].add(cluster_ids[j])
+                adjacency[cluster_ids[j]].add(cluster_ids[i])
+
+    merged_map: dict[int, int] = {}
+    new_cluster_id = 0
+    for cid in cluster_ids:
+        if cid in merged_map:
+            continue
+        stack = [cid]
+        while stack:
+            current = stack.pop()
+            if current in merged_map:
+                continue
+            merged_map[current] = new_cluster_id
+            stack.extend(adjacency[current])
+        new_cluster_id += 1
+    return merged_map
+
+
 def main(
     cluster_dir: Path,
     out_dir: Path,
-    merge_threshold: float,
-    noise_threshold: float,
+    similarity_cfg_path: Path,
+    merge_threshold: float | None,
+    noise_threshold: float | None,
 ):
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -28,25 +103,28 @@ def main(
     assignments = pd.read_parquet(assignments_path)
     centroids_dict = np.load(centroids_path, allow_pickle=True).item()
 
+    similarity_cfg = load_similarity_config(similarity_cfg_path)
+    merge_threshold = (
+        merge_threshold
+        if merge_threshold is not None
+        else similarity_cfg["merge_threshold"]
+    )
+    noise_threshold = (
+        noise_threshold
+        if noise_threshold is not None
+        else similarity_cfg["noise_threshold"]
+    )
+
     cluster_ids = list(centroids_dict.keys())
     centroid_matrix = np.stack([centroids_dict[cid] for cid in cluster_ids])
 
-    # Merge clusters with high similarity
-    sim_matrix = cosine_similarity(centroid_matrix)
-    merged_map = {}
-    visited = set()
-    new_cluster_id = 0
-    for i, cid in tqdm(enumerate(cluster_ids), desc="Merging clusters", unit="cluster"):
-        if cid in visited:
-            continue
-        merge_group = [cid]
-        for j, other_cid in enumerate(cluster_ids):
-            if i != j and sim_matrix[i, j] >= merge_threshold:
-                merge_group.append(other_cid)
-        for mc in merge_group:
-            merged_map[mc] = new_cluster_id
-            visited.add(mc)
-        new_cluster_id += 1
+    logger.info(
+        "Merging clusters using %s metric (threshold %.3f) from %s",
+        similarity_cfg["metric"],
+        merge_threshold,
+        similarity_cfg_path,
+    )
+    merged_map = build_merge_map(cluster_ids, centroid_matrix, merge_threshold)
 
     # Apply cluster merge
     assignments["cluster_id"] = assignments["cluster_id"].map(
@@ -90,6 +168,206 @@ def main(
                     final_ids[new_labels[i]]
                 )
 
+    # Merge tiny clusters into nearest larger cluster if similarity is high enough.
+    # This reduces fragmentation when embeddings are noisy.
+    cluster_sizes = assignments["cluster_id"].value_counts().to_dict()
+    small_cluster_ids = [
+        cid
+        for cid, size in cluster_sizes.items()
+        if cid != -1 and size <= similarity_cfg["small_cluster_max_size"]
+    ]
+
+    if small_cluster_ids:
+        final_centroids = {}
+        for cid in sorted(set(assignments["cluster_id"]) - {-1}):
+            ids = assignments[assignments["cluster_id"] == cid]["entity_id"].tolist()
+            embs = [
+                np.load(
+                    cluster_dir.parent.parent / "data/embeddings/fused" / f"{eid}.npy"
+                )
+                for eid in ids
+            ]
+            final_centroids[cid] = np.mean(embs, axis=0)
+
+        centroid_ids = list(final_centroids.keys())
+        centroid_matrix = np.stack([final_centroids[cid] for cid in centroid_ids])
+        sim_matrix = cosine_similarity(centroid_matrix)
+
+        id_to_index = {cid: idx for idx, cid in enumerate(centroid_ids)}
+        for cid in small_cluster_ids:
+            if cid not in id_to_index:
+                continue
+            idx = id_to_index[cid]
+            sims = sim_matrix[idx]
+            sims[idx] = -1.0
+            best_idx = int(np.argmax(sims))
+            best_sim = float(sims[best_idx])
+            target_cid = centroid_ids[best_idx]
+            target_size = cluster_sizes.get(target_cid, 0)
+            threshold = similarity_cfg["small_cluster_threshold"]
+            if target_size >= similarity_cfg["large_cluster_max_size"]:
+                threshold = max(threshold, similarity_cfg["small_to_large_threshold"])
+            if best_sim >= threshold:
+                assignments.loc[assignments["cluster_id"] == cid, "cluster_id"] = (
+                    target_cid
+                )
+
+    # Force-merge clusters smaller than min_cluster_size to the closest cluster
+    # if similarity is above min_cluster_force_threshold.
+    cluster_sizes = assignments["cluster_id"].value_counts().to_dict()
+    min_cluster_ids = [
+        cid
+        for cid, size in cluster_sizes.items()
+        if cid != -1 and size < similarity_cfg["min_cluster_size"]
+    ]
+
+    if min_cluster_ids:
+        final_centroids = {}
+        for cid in sorted(set(assignments["cluster_id"]) - {-1}):
+            ids = assignments[assignments["cluster_id"] == cid]["entity_id"].tolist()
+            embs = [
+                np.load(
+                    cluster_dir.parent.parent / "data/embeddings/fused" / f"{eid}.npy"
+                )
+                for eid in ids
+            ]
+            final_centroids[cid] = np.mean(embs, axis=0)
+
+        centroid_ids = list(final_centroids.keys())
+        centroid_matrix = np.stack([final_centroids[cid] for cid in centroid_ids])
+        sim_matrix = cosine_similarity(centroid_matrix)
+        id_to_index = {cid: idx for idx, cid in enumerate(centroid_ids)}
+
+        for cid in min_cluster_ids:
+            if cid not in id_to_index:
+                continue
+            idx = id_to_index[cid]
+            sims = sim_matrix[idx]
+            sims[idx] = -1.0
+            best_idx = int(np.argmax(sims))
+            best_sim = float(sims[best_idx])
+            if best_sim >= similarity_cfg["min_cluster_force_threshold"]:
+                target_cid = centroid_ids[best_idx]
+                assignments.loc[assignments["cluster_id"] == cid, "cluster_id"] = (
+                    target_cid
+                )
+
+    # Split overly large clusters with a stricter distance threshold.
+    cluster_sizes = assignments["cluster_id"].value_counts().to_dict()
+    large_cluster_ids = [
+        cid
+        for cid, size in cluster_sizes.items()
+        if cid != -1 and size > similarity_cfg["large_cluster_max_size"]
+    ]
+
+    if large_cluster_ids:
+        next_cluster_id = (
+            max(cid for cid in set(assignments["cluster_id"]) if cid != -1) + 1
+        )
+        for cid in large_cluster_ids:
+            ids = assignments[assignments["cluster_id"] == cid]["entity_id"].tolist()
+            if len(ids) <= 1:
+                continue
+            embs = [
+                np.load(
+                    cluster_dir.parent.parent / "data/embeddings/fused" / f"{eid}.npy"
+                )
+                for eid in ids
+            ]
+            embs = np.stack(embs)
+            sub_labels = split_large_cluster(
+                embs,
+                similarity_cfg["metric"],
+                similarity_cfg["large_cluster_distance_threshold"],
+            )
+            if len(set(sub_labels)) <= 1:
+                continue
+            mapping = {}
+            for sub_id in sorted(set(sub_labels)):
+                mapping[sub_id] = next_cluster_id
+                next_cluster_id += 1
+            for eid, sub_id in zip(ids, sub_labels):
+                assignments.loc[assignments["entity_id"] == eid, "cluster_id"] = (
+                    mapping[sub_id]
+                )
+
+    # Force reassign any remaining singletons to the closest cluster.
+    if similarity_cfg["force_reassign_singletons"]:
+        cluster_sizes = assignments["cluster_id"].value_counts().to_dict()
+        singleton_ids = [
+            cid for cid, size in cluster_sizes.items() if cid != -1 and size == 1
+        ]
+        if singleton_ids:
+            final_centroids = {}
+            for cid in sorted(set(assignments["cluster_id"]) - {-1}):
+                ids = assignments[assignments["cluster_id"] == cid][
+                    "entity_id"
+                ].tolist()
+                embs = [
+                    np.load(
+                        cluster_dir.parent.parent
+                        / "data/embeddings/fused"
+                        / f"{eid}.npy"
+                    )
+                    for eid in ids
+                ]
+                final_centroids[cid] = np.mean(embs, axis=0)
+
+            centroid_ids = list(final_centroids.keys())
+            centroid_matrix = np.stack([final_centroids[cid] for cid in centroid_ids])
+            sim_matrix = cosine_similarity(centroid_matrix)
+            id_to_index = {cid: idx for idx, cid in enumerate(centroid_ids)}
+
+            for cid in singleton_ids:
+                if cid not in id_to_index:
+                    continue
+                idx = id_to_index[cid]
+                sims = sim_matrix[idx]
+                sims[idx] = -1.0
+                best_idx = int(np.argmax(sims))
+                target_cid = centroid_ids[best_idx]
+                assignments.loc[assignments["cluster_id"] == cid, "cluster_id"] = (
+                    target_cid
+                )
+
+    # Force reassign any remaining noise points (-1) to the closest cluster.
+    if similarity_cfg["force_reassign_noise"]:
+        noise_mask = assignments["cluster_id"] == -1
+        if noise_mask.any():
+            noise_entities = assignments[noise_mask]["entity_id"].tolist()
+            noise_embeds = []
+            for eid in noise_entities:
+                emb = np.load(
+                    cluster_dir.parent.parent / "data/embeddings/fused" / f"{eid}.npy"
+                )
+                noise_embeds.append(emb)
+            noise_embeds = np.stack(noise_embeds)
+
+            final_centroids = {}
+            for cid in sorted(set(assignments["cluster_id"]) - {-1}):
+                ids = assignments[assignments["cluster_id"] == cid][
+                    "entity_id"
+                ].tolist()
+                embs = [
+                    np.load(
+                        cluster_dir.parent.parent
+                        / "data/embeddings/fused"
+                        / f"{eid}.npy"
+                    )
+                    for eid in ids
+                ]
+                final_centroids[cid] = np.mean(embs, axis=0)
+
+            centroid_ids = list(final_centroids.keys())
+            centroid_matrix = np.stack([final_centroids[cid] for cid in centroid_ids])
+            sims = cosine_similarity(noise_embeds, centroid_matrix)
+            new_labels = sims.argmax(axis=1)
+
+            for i, eid in enumerate(noise_entities):
+                assignments.loc[assignments["entity_id"] == eid, "cluster_id"] = (
+                    centroid_ids[new_labels[i]]
+                )
+
     assignments.to_parquet(out_dir / "assignments_refined.parquet", index=False)
     merged_map_json = {int(k): int(v) for k, v in merged_map.items()}
     with open(out_dir / "merges.json", "w") as f:
@@ -105,8 +383,13 @@ if __name__ == "__main__":
     ap.add_argument("--cluster-dir", type=Path, default=Path("data/clusters"))
     ap.add_argument("--out-dir", type=Path, default=Path("data/clusters/refined"))
     ap.add_argument("--log-file", type=Path, default=Path("logs/cluster_entities.log"))
-    ap.add_argument("--merge-threshold", type=float, default=DEFAULT_MERGE_THRESHOLD)
-    ap.add_argument("--noise-threshold", type=float, default=DEFAULT_NOISE_THRESHOLD)
+    ap.add_argument("--merge-threshold", type=float, default=None)
+    ap.add_argument("--noise-threshold", type=float, default=None)
+    ap.add_argument(
+        "--similarity-config",
+        type=Path,
+        default=Path("configs/similarity.json"),
+    )
     args = ap.parse_args()
 
     logging.basicConfig(
@@ -118,6 +401,13 @@ if __name__ == "__main__":
 
     logger.info("Starting cluster refinement process")
 
-    main(args.cluster_dir, args.out_dir, args.merge_threshold, args.noise_threshold)
+    similarity_cfg_path = args.similarity_config
+    main(
+        args.cluster_dir,
+        args.out_dir,
+        similarity_cfg_path,
+        args.merge_threshold,
+        args.noise_threshold,
+    )
 
     logger.info("Cluster refinement process complete")
