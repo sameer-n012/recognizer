@@ -7,10 +7,9 @@ from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
 
-logger = logging.getLogger(__name__)
+from config import get_section, load_config, resolve, resolve_path
 
-DEFAULT_MAX_FRAMES = 60
-DEFAULT_MAX_FRAME_RATE = 2.0  # frames per second
+logger = logging.getLogger(__name__)
 
 
 def extract_frames(
@@ -108,15 +107,25 @@ def main(index_path: Path, frames_root: Path, max_frames: int, max_frame_rate: f
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--index", type=Path, default=Path("cache/file_index.parquet"))
-    ap.add_argument("--frames-dir", type=Path, default=Path("data/frames"))
-    ap.add_argument("--log-file", type=Path, default=Path("logs/extract_frames.log"))
-    ap.add_argument("--max-frames", type=int, default=DEFAULT_MAX_FRAMES)
-    ap.add_argument("--max-frame-rate", type=float, default=DEFAULT_MAX_FRAME_RATE)
+    ap.add_argument("--config", type=Path, default=Path("configs/config.json"))
+    ap.add_argument("--index", type=Path, default=None)
+    ap.add_argument("--frames-dir", type=Path, default=None)
+    ap.add_argument("--log-file", type=Path, default=None)
+    ap.add_argument("--max-frames", type=int, default=None)
+    ap.add_argument("--max-frame-rate", type=float, default=None)
     args = ap.parse_args()
 
+    cfg = load_config(args.config)
+    section = get_section(cfg, "extract_frames")
+
+    index_path = resolve_path(resolve(args.index, section.get("index")))
+    frames_dir = resolve_path(resolve(args.frames_dir, section.get("frames_dir")))
+    log_file = resolve_path(resolve(args.log_file, section.get("log_file")))
+    max_frames = resolve(args.max_frames, section.get("max_frames"))
+    max_frame_rate = resolve(args.max_frame_rate, section.get("max_frame_rate"))
+
     logging.basicConfig(
-        filename=args.log_file,
+        filename=log_file,
         filemode="w",
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
@@ -124,6 +133,6 @@ if __name__ == "__main__":
 
     logger.info("Starting frame extraction process")
 
-    main(args.index, args.frames_dir, args.max_frames, args.max_frame_rate)
+    main(index_path, frames_dir, max_frames, max_frame_rate)
 
     logger.info("Frame extraction process completed")

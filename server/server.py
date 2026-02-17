@@ -46,11 +46,12 @@ def load_config() -> Dict[str, Any]:
     if not similarity_path.exists():
         raise FileNotFoundError(f"Similarity config missing: {similarity_path}")
     similarity_raw = json.loads(similarity_path.read_text())
+    similarity_section = similarity_raw.get("similarity", similarity_raw)
     resolved["similarity"] = {
-        "metric": similarity_raw.get("metric", "cosine"),
-        "transform": similarity_raw.get("transform", "reciprocal"),
-        "scale": float(similarity_raw.get("scale", 1.0)),
-        "epsilon": float(similarity_raw.get("epsilon", 1e-6)),
+        "metric": similarity_section.get("metric", "cosine"),
+        "transform": similarity_section.get("transform", "reciprocal"),
+        "scale": float(similarity_section.get("scale", 1.0)),
+        "epsilon": float(similarity_section.get("epsilon", 1e-6)),
     }
     resolved["similarity_config_path"] = similarity_path
     return resolved

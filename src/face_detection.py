@@ -8,11 +8,9 @@ import pandas as pd
 from insightface.app import FaceAnalysis
 from tqdm import tqdm
 
-logger = logging.getLogger(__name__)
+from config import get_section, load_config, resolve, resolve_path
 
-DEFAULT_FACE_DET_SIZE = (640, 640)
-DEFAULT_FACE_DET_CONF_THRESHOLD = 0.6
-INSIGHTFACE_ROOT = "./models/insightface"
+logger = logging.getLogger(__name__)
 
 
 def clamp_bbox(bbox, width, height):
@@ -45,13 +43,14 @@ def main(
     det_size,
     conf_threshold,
     save_embeddings,
-    no_cache=False,
+    no_cache,
+    insightface_root,
+    model_name,
+    providers,
 ):
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    app = FaceAnalysis(
-        "buffalo_l", root=INSIGHTFACE_ROOT, providers=["CPUExecutionProvider"]
-    )
+    app = FaceAnalysis(model_name, root=insightface_root, providers=providers)
     app.prepare(ctx_id=0, det_size=tuple(det_size))
 
     df = pd.read_parquet(index_path)
@@ -131,32 +130,48 @@ def main(
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--index", type=Path, default=Path("cache/file_index.parquet"))
-    ap.add_argument("--frames-dir", type=Path, default=Path("data/frames"))
-    ap.add_argument("--persons-dir", type=Path, default=Path("data/detections/persons"))
-    ap.add_argument("--out-dir", type=Path, default=Path("data/detections/faces"))
-    ap.add_argument("--log-file", type=Path, default=Path("logs/face_detection.log"))
-    ap.add_argument("--no-cache", action="store_true")
+    ap.add_argument("--config", type=Path, default=Path("configs/config.json"))
+    ap.add_argument("--index", type=Path, default=None)
+    ap.add_argument("--frames-dir", type=Path, default=None)
+    ap.add_argument("--persons-dir", type=Path, default=None)
+    ap.add_argument("--out-dir", type=Path, default=None)
+    ap.add_argument("--log-file", type=Path, default=None)
+    ap.add_argument("--no-cache", action="store_true", default=None)
     ap.add_argument(
         "--no-embeddings",
         action="store_true",
+        default=None,
         help="Do not store face embeddings in detections output",
     )
-    ap.add_argument(
-        "--det-size",
-        type=int,
-        nargs=2,
-        default=[DEFAULT_FACE_DET_SIZE[0], DEFAULT_FACE_DET_SIZE[1]],
-    )
-    ap.add_argument(
-        "--conf-threshold",
-        type=float,
-        default=DEFAULT_FACE_DET_CONF_THRESHOLD,
-    )
+    ap.add_argument("--det-size", type=int, nargs=2, default=None)
+    ap.add_argument("--conf-threshold", type=float, default=None)
+    ap.add_argument("--model", type=str, default=None)
+    ap.add_argument("--providers", type=str, nargs="+", default=None)
+    ap.add_argument("--insightface-root", type=Path, default=None)
     args = ap.parse_args()
 
+    cfg = load_config(args.config)
+    section = get_section(cfg, "face_detection")
+
+    index_path = resolve_path(resolve(args.index, section.get("index")))
+    frames_dir = resolve_path(resolve(args.frames_dir, section.get("frames_dir")))
+    persons_dir = resolve_path(resolve(args.persons_dir, section.get("persons_dir")))
+    out_dir = resolve_path(resolve(args.out_dir, section.get("out_dir")))
+    log_file = resolve_path(resolve(args.log_file, section.get("log_file")))
+    det_size = resolve(args.det_size, section.get("det_size"))
+    conf_threshold = resolve(args.conf_threshold, section.get("conf_threshold"))
+    no_cache = resolve(args.no_cache, section.get("no_cache"), False)
+    no_embeddings = resolve(
+        args.no_embeddings, not section.get("save_embeddings"), False
+    )
+    model_name = resolve(args.model, section.get("model"))
+    providers = resolve(args.providers, section.get("providers"))
+    insightface_root = resolve_path(
+        resolve(args.insightface_root, section.get("insightface_root"))
+    )
+
     logging.basicConfig(
-        filename=args.log_file,
+        filename=log_file,
         filemode="w",
         format="%(asctime)s - %(levelname)s - %(message)s",
         level=logging.INFO,
@@ -165,14 +180,17 @@ if __name__ == "__main__":
     logger.info("Starting face detection process")
 
     main(
-        args.index,
-        args.frames_dir,
-        args.persons_dir,
-        args.out_dir,
-        tuple(args.det_size),
-        args.conf_threshold,
-        not args.no_embeddings,
-        args.no_cache,
+        index_path,
+        frames_dir,
+        persons_dir,
+        out_dir,
+        tuple(det_size),
+        conf_threshold,
+        not no_embeddings,
+        bool(no_cache),
+        str(insightface_root),
+        model_name,
+        providers,
     )
 
     logger.info("Face detection process completed")

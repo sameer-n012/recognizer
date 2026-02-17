@@ -1,0 +1,149 @@
+{
+  "paths": {
+    "index": "cache/file_index.parquet",
+    "frames_dir": "data/frames",
+    "entities_dir": "data/entities",
+    "persons_dir": "data/detections/persons",
+    "faces_dir": "data/detections/faces",
+    "embeddings_face_dir": "data/embeddings/face",
+    "embeddings_body_dir": "data/embeddings/body",
+    "embeddings_clip_dir": "data/embeddings/clip",
+    "embeddings_fused_dir": "data/embeddings/fused",
+    "clusters_dir": "data/clusters",
+    "clusters_refined_dir": "data/clusters/refined"
+  },
+  "index_files": {
+    "input_dir": null,
+    "out": "cache/file_index.parquet",
+    "log_file": "logs/index_files.log"
+  },
+  "extract_frames": {
+    "index": "cache/file_index.parquet",
+    "frames_dir": "data/frames",
+    "log_file": "logs/extract_frames.log",
+    "max_frames": 60,
+    "max_frame_rate": 2.0
+  },
+  "person_detection": {
+    "index": "cache/file_index.parquet",
+    "frames_dir": "data/frames",
+    "out_dir": "data/detections/persons",
+    "log_file": "logs/person_detection.log",
+    "confidence_threshold": 0.3,
+    "model_path": "models/yolov8s.pt"
+  },
+  "face_detection": {
+    "index": "cache/file_index.parquet",
+    "frames_dir": "data/frames",
+    "persons_dir": "data/detections/persons",
+    "out_dir": "data/detections/faces",
+    "log_file": "logs/face_detection.log",
+    "det_size": [640, 640],
+    "conf_threshold": 0.6,
+    "no_cache": false,
+    "save_embeddings": true,
+    "insightface_root": "./models/insightface",
+    "model": "buffalo_l",
+    "providers": ["CPUExecutionProvider"]
+  },
+  "build_entities": {
+    "index": "cache/file_index.parquet",
+    "persons_dir": "data/detections/persons",
+    "faces_dir": "data/detections/faces",
+    "out_dir": "data/entities",
+    "log_file": "logs/build_entities.log",
+    "min_frames_per_entity": 3,
+    "iou_match_threshold": 0.2,
+    "tracker": {
+      "track_thresh": 0.3,
+      "match_thresh": 0.8,
+      "frame_rate": 30,
+      "track_buffer": 30,
+      "mot20": false
+    }
+  },
+  "embed_faces": {
+    "entities_dir": "data/entities",
+    "frames_dir": "data/frames",
+    "out_dir": "data/embeddings/face",
+    "index_path": "cache/file_index.parquet",
+    "log_file": "logs/face_embeddings.log",
+    "min_confidence": 0.6,
+    "face_pad_ratio": 0.05,
+    "match_iou": 0.2,
+    "model": "buffalo_l",
+    "providers": ["CPUExecutionProvider"]
+  },
+  "embed_bodies": {
+    "entities_dir": "data/entities",
+    "index": "cache/file_index.parquet",
+    "frames_dir": "data/frames",
+    "out_dir": "data/embeddings/body",
+    "log_file": "logs/body_embeddings.log",
+    "input_size": [256, 128],
+    "batch_size": 16,
+    "model": "osnet_x1_0"
+  },
+  "embed_clip": {
+    "entities_dir": "data/entities",
+    "frames_dir": "data/frames",
+    "index_path": "cache/file_index.parquet",
+    "out_dir": "data/embeddings/clip",
+    "log_file": "logs/clip_embeddings.log",
+    "batch_size": 16,
+    "model": "ViT-B-32",
+    "pretrained": "openai"
+  },
+  "fuse_embeddings": {
+    "entities_dir": "data/entities",
+    "face_dir": "data/embeddings/face",
+    "body_dir": "data/embeddings/body",
+    "clip_dir": "data/embeddings/clip",
+    "out_dir": "data/embeddings/fused",
+    "log_file": "logs/fuse_embeddings.log",
+    "face_weights": [0.6, 0.25, 0.15],
+    "no_face_weights": [0.0, 0.65, 0.35],
+    "no_person_weights": [0.0, 0.0, 1.0]
+  },
+  "cluster_entities": {
+    "fused_dir": "data/embeddings/fused",
+    "out_dir": "data/clusters",
+    "log_file": "logs/cluster_entities.log",
+    "similarity": {
+      "metric": "cosine",
+      "transform": "reciprocal",
+      "scale": 1.0,
+      "epsilon": 1e-6,
+      "hdbscan": {
+        "min_cluster_size": 10,
+        "min_samples": 5
+      },
+      "cluster_split": {
+        "max_cluster_size": 50,
+        "distance_threshold": 0.22
+      }
+    }
+  },
+  "refine_clusters": {
+    "cluster_dir": "data/clusters",
+    "out_dir": "data/clusters/refined",
+    "log_file": "logs/cluster_entities.log",
+    "merge_threshold": 0.78,
+    "noise_threshold": 0.55,
+    "small_cluster_threshold": 0.54,
+    "small_cluster_max_size": 8,
+    "small_to_large_threshold": 0.76,
+    "large_cluster_max_size": 60,
+    "large_cluster_distance_threshold": 0.2,
+    "min_cluster_size": 4,
+    "min_cluster_force_threshold": 0.55,
+    "force_reassign_singletons": true,
+    "force_reassign_noise": true
+  },
+  "similarity": {
+    "metric": "cosine",
+    "transform": "reciprocal",
+    "scale": 1.0,
+    "epsilon": 1e-6
+  }
+}

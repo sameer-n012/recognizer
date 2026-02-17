@@ -8,16 +8,20 @@ import torch
 from tqdm import tqdm
 from ultralytics import YOLO
 
-logger = logging.getLogger(__name__)
+from config import get_section, load_config, resolve, resolve_path
 
-DEFAULT_PERSON_DET_CONF_THRESHOLD = 0.3
+logger = logging.getLogger(__name__)
 
 
 def main(
-    index_path: Path, frames_root: Path, out_dir: Path, confidence_threshold: float
+    index_path: Path,
+    frames_root: Path,
+    out_dir: Path,
+    confidence_threshold: float,
+    model_path: Path,
 ):
     device = "mps" if torch.backends.mps.is_available() else "cpu"
-    model = YOLO("models/yolov8s.pt").to(device)
+    model = YOLO(str(model_path)).to(device)
 
     logger.info(f"Running YOLOv8s on device: {device}")
 
@@ -86,17 +90,29 @@ def main(
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--index", type=Path, default=Path("cache/file_index.parquet"))
-    ap.add_argument("--frames-dir", type=Path, default=Path("data/frames"))
-    ap.add_argument("--out-dir", type=Path, default=Path("data/detections/persons"))
-    ap.add_argument("--log-file", type=Path, default=Path("logs/person_detection.log"))
-    ap.add_argument(
-        "--confidence-threshold", type=float, default=DEFAULT_PERSON_DET_CONF_THRESHOLD
-    )
+    ap.add_argument("--config", type=Path, default=Path("configs/config.json"))
+    ap.add_argument("--index", type=Path, default=None)
+    ap.add_argument("--frames-dir", type=Path, default=None)
+    ap.add_argument("--out-dir", type=Path, default=None)
+    ap.add_argument("--log-file", type=Path, default=None)
+    ap.add_argument("--confidence-threshold", type=float, default=None)
+    ap.add_argument("--model-path", type=Path, default=None)
     args = ap.parse_args()
 
+    cfg = load_config(args.config)
+    section = get_section(cfg, "person_detection")
+
+    index_path = resolve_path(resolve(args.index, section.get("index")))
+    frames_dir = resolve_path(resolve(args.frames_dir, section.get("frames_dir")))
+    out_dir = resolve_path(resolve(args.out_dir, section.get("out_dir")))
+    log_file = resolve_path(resolve(args.log_file, section.get("log_file")))
+    confidence_threshold = resolve(
+        args.confidence_threshold, section.get("confidence_threshold")
+    )
+    model_path = resolve_path(resolve(args.model_path, section.get("model_path")))
+
     logging.basicConfig(
-        filename=args.log_file,
+        filename=log_file,
         filemode="w",
         format="%(asctime)s - %(levelname)s - %(message)s",
         level=logging.INFO,
@@ -104,6 +120,6 @@ if __name__ == "__main__":
 
     logger.info("Starting person detection process")
 
-    main(args.index, args.frames_dir, args.out_dir, args.confidence_threshold)
+    main(index_path, frames_dir, out_dir, confidence_threshold, model_path)
 
     logger.info("Person detection process completed")

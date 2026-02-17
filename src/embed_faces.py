@@ -9,11 +9,9 @@ import pandas as pd
 from insightface.app import FaceAnalysis
 from tqdm import tqdm
 
-logger = logging.getLogger(__name__)
+from config import get_section, load_config, resolve, resolve_path
 
-DEFAULT_MIN_CONFIDENCE = 0.6
-DEFAULT_FACE_PAD_RATIO = 0.05
-DEFAULT_MATCH_IOU = 0.2
+logger = logging.getLogger(__name__)
 
 
 def l2norm(x):
@@ -70,10 +68,20 @@ def match_face_to_detection(face_bbox, detected_faces, min_iou):
     return best_face
 
 
-def main(entities_dir, frames_dir, out_dir, index_path, min_confidence):
+def main(
+    entities_dir,
+    frames_dir,
+    out_dir,
+    index_path,
+    min_confidence,
+    face_pad_ratio,
+    match_iou,
+    model_name,
+    providers,
+):
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    app = FaceAnalysis("buffalo_l", providers=["CPUExecutionProvider"])
+    app = FaceAnalysis(model_name, providers=providers)
     app.prepare(ctx_id=0)
 
     n = len(list(entities_dir.glob("*.json")))
@@ -122,16 +130,12 @@ def main(entities_dir, frames_dir, out_dir, index_path, min_confidence):
                 if "embedding" in f:
                     embeds.append(l2norm(np.asarray(f["embedding"], dtype=np.float32)))
                     continue
-                bbox = clamp_bbox(
-                    f["bbox"], width, height, pad_ratio=DEFAULT_FACE_PAD_RATIO
-                )
+                bbox = clamp_bbox(f["bbox"], width, height, pad_ratio=face_pad_ratio)
                 if bbox is None:
                     continue
                 if not detected_faces:
                     continue
-                matched_face = match_face_to_detection(
-                    bbox, detected_faces, DEFAULT_MATCH_IOU
-                )
+                matched_face = match_face_to_detection(bbox, detected_faces, match_iou)
                 if matched_face and matched_face.det_score >= min_confidence:
                     embeds.append(l2norm(matched_face.embedding))
 
@@ -146,17 +150,36 @@ def main(entities_dir, frames_dir, out_dir, index_path, min_confidence):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--entities-dir", type=Path, default=Path("data/entities"))
-    ap.add_argument("--frames-dir", type=Path, default=Path("data/frames"))
-    ap.add_argument("--out-dir", type=Path, default=Path("data/embeddings/face"))
-    ap.add_argument("--index-path", type=Path, default=Path("cache/file_index.parquet"))
-    ap.add_argument("--log-file", type=Path, default=Path("logs/face_embeddings.log"))
-    ap.add_argument("--min-confidence", type=float, default=DEFAULT_MIN_CONFIDENCE)
+    ap.add_argument("--config", type=Path, default=Path("configs/config.json"))
+    ap.add_argument("--entities-dir", type=Path, default=None)
+    ap.add_argument("--frames-dir", type=Path, default=None)
+    ap.add_argument("--out-dir", type=Path, default=None)
+    ap.add_argument("--index-path", type=Path, default=None)
+    ap.add_argument("--log-file", type=Path, default=None)
+    ap.add_argument("--min-confidence", type=float, default=None)
+    ap.add_argument("--face-pad-ratio", type=float, default=None)
+    ap.add_argument("--match-iou", type=float, default=None)
+    ap.add_argument("--model", type=str, default=None)
+    ap.add_argument("--providers", type=str, nargs="+", default=None)
 
     args = ap.parse_args()
 
+    cfg = load_config(args.config)
+    section = get_section(cfg, "embed_faces")
+
+    entities_dir = resolve_path(resolve(args.entities_dir, section.get("entities_dir")))
+    frames_dir = resolve_path(resolve(args.frames_dir, section.get("frames_dir")))
+    out_dir = resolve_path(resolve(args.out_dir, section.get("out_dir")))
+    index_path = resolve_path(resolve(args.index_path, section.get("index_path")))
+    log_file = resolve_path(resolve(args.log_file, section.get("log_file")))
+    min_confidence = resolve(args.min_confidence, section.get("min_confidence"))
+    face_pad_ratio = resolve(args.face_pad_ratio, section.get("face_pad_ratio"))
+    match_iou = resolve(args.match_iou, section.get("match_iou"))
+    model_name = resolve(args.model, section.get("model"))
+    providers = resolve(args.providers, section.get("providers"))
+
     logging.basicConfig(
-        filename=args.log_file,
+        filename=log_file,
         filemode="w",
         format="%(asctime)s - %(levelname)s - %(message)s",
         level=logging.INFO,
@@ -165,11 +188,15 @@ if __name__ == "__main__":
     logger.info("Starting face embedding extraction")
 
     main(
-        args.entities_dir,
-        args.frames_dir,
-        args.out_dir,
-        args.index_path,
-        args.min_confidence,
+        entities_dir,
+        frames_dir,
+        out_dir,
+        index_path,
+        min_confidence,
+        face_pad_ratio,
+        match_iou,
+        model_name,
+        providers,
     )
 
     logger.info("Face embedding extraction complete")

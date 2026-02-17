@@ -5,6 +5,7 @@ from pathlib import Path
 import pandas as pd
 from tqdm import tqdm
 
+from config import get_section, load_config, resolve, resolve_path
 from utils import (
     asset_id_for_file,
     cv2_image_metadata,
@@ -83,13 +84,23 @@ def main(input_dir: Path, out_path: Path):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input-dir", type=Path, required=True)
-    ap.add_argument("--out", type=Path, default=Path("cache/file_index.parquet"))
-    ap.add_argument("--log-file", type=Path, default=Path("logs/index_files.log"))
+    ap.add_argument("--config", type=Path, default=Path("configs/config.json"))
+    ap.add_argument("--input-dir", type=Path, default=None)
+    ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument("--log-file", type=Path, default=None)
     args = ap.parse_args()
 
+    cfg = load_config(args.config)
+    section = get_section(cfg, "index_files")
+
+    input_dir = resolve_path(resolve(args.input_dir, section.get("input_dir")))
+    if input_dir is None:
+        raise ValueError("input_dir must be provided via CLI or config")
+    out_path = resolve_path(resolve(args.out, section.get("out")))
+    log_file = resolve_path(resolve(args.log_file, section.get("log_file")))
+
     logging.basicConfig(
-        filename=str(args.log_file),
+        filename=str(log_file),
         filemode="w",
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
@@ -97,6 +108,6 @@ if __name__ == "__main__":
 
     logger.info("Starting file indexing")
 
-    main(args.input_dir, args.out)
+    main(input_dir, out_path)
 
     logger.info("File indexing completed")

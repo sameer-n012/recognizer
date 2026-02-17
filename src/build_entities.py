@@ -12,10 +12,9 @@ import pandas as pd
 from tqdm import tqdm
 from yolox.tracker.byte_tracker import BYTETracker
 
-logger = logging.getLogger(__name__)
+from config import get_section, load_config, resolve, resolve_path
 
-DEFAULT_MIN_FRAMES_PER_ENTITY = 3
-IOU_MATCH_THRESHOLD = 0.2
+logger = logging.getLogger(__name__)
 
 
 def make_entity_id(asset_id, track_id):
@@ -57,7 +56,7 @@ def match_detection_to_track(
     track_tlbr: Sequence[float],
     detection_boxes: Sequence[Sequence[float]],
     used_indices: set[int],
-    min_iou: float = IOU_MATCH_THRESHOLD,
+    min_iou: float,
 ) -> int | None:
     """
     Return the detection index whose bounding box has the highest IoU with the
@@ -81,18 +80,14 @@ def main(
     faces_dir: Path,
     out_dir: Path,
     min_frames_per_entity: int,
+    iou_match_threshold: float,
+    tracker_cfg: dict[str, Any],
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     df = pd.read_parquet(index_path)
 
-    tracker_args = SimpleNamespace(
-        track_thresh=0.3,
-        match_thresh=0.8,
-        frame_rate=30,
-        track_buffer=30,
-        mot20=False,
-    )
+    tracker_args = SimpleNamespace(**tracker_cfg)
 
     for _, row in tqdm(
         df.iterrows(), total=len(df), desc="Building entities", unit="asset"
@@ -176,7 +171,10 @@ def main(
                     continue
 
                 match_idx = match_detection_to_track(
-                    target.tlbr, detection_boxes, used_indices
+                    target.tlbr,
+                    detection_boxes,
+                    used_indices,
+                    min_iou=iou_match_threshold,
                 )
                 if match_idx is None:
                     continue
@@ -222,20 +220,34 @@ def main(
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--index", type=Path, default=Path("cache/file_index.parquet"))
-    ap.add_argument("--persons-dir", type=Path, default=Path("data/detections/persons"))
-    ap.add_argument("--faces-dir", type=Path, default=Path("data/detections/faces"))
-    ap.add_argument("--out-dir", type=Path, default=Path("data/entities"))
-    ap.add_argument(
-        "--min-frames-per-entity",
-        type=int,
-        default=DEFAULT_MIN_FRAMES_PER_ENTITY,
-    )
-    ap.add_argument("--log-file", type=Path, default=Path("logs/build_entities.log"))
+    ap.add_argument("--config", type=Path, default=Path("configs/config.json"))
+    ap.add_argument("--index", type=Path, default=None)
+    ap.add_argument("--persons-dir", type=Path, default=None)
+    ap.add_argument("--faces-dir", type=Path, default=None)
+    ap.add_argument("--out-dir", type=Path, default=None)
+    ap.add_argument("--min-frames-per-entity", type=int, default=None)
+    ap.add_argument("--log-file", type=Path, default=None)
+    ap.add_argument("--iou-match-threshold", type=float, default=None)
     args = ap.parse_args()
 
+    cfg = load_config(args.config)
+    section = get_section(cfg, "build_entities")
+
+    index_path = resolve_path(resolve(args.index, section.get("index")))
+    persons_dir = resolve_path(resolve(args.persons_dir, section.get("persons_dir")))
+    faces_dir = resolve_path(resolve(args.faces_dir, section.get("faces_dir")))
+    out_dir = resolve_path(resolve(args.out_dir, section.get("out_dir")))
+    min_frames_per_entity = resolve(
+        args.min_frames_per_entity, section.get("min_frames_per_entity")
+    )
+    log_file = resolve_path(resolve(args.log_file, section.get("log_file")))
+    iou_match_threshold = resolve(
+        args.iou_match_threshold, section.get("iou_match_threshold")
+    )
+    tracker_cfg = section.get("tracker", {})
+
     logging.basicConfig(
-        filename=args.log_file,
+        filename=log_file,
         filemode="w",
         level=logging.INFO,
         format="%(asctime)s %(levelname)s %(message)s",
@@ -244,11 +256,13 @@ if __name__ == "__main__":
     logger.info("Starting entity construction process")
 
     main(
-        args.index,
-        args.persons_dir,
-        args.faces_dir,
-        args.out_dir,
-        args.min_frames_per_entity,
+        index_path,
+        persons_dir,
+        faces_dir,
+        out_dir,
+        min_frames_per_entity,
+        iou_match_threshold,
+        tracker_cfg,
     )
 
     logger.info("Entity construction process complete")

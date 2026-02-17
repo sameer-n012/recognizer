@@ -3,35 +3,35 @@ import itertools as it
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 # import hdbscan
 import numpy as np
 import pandas as pd
 from sklearn.cluster import HDBSCAN, AgglomerativeClustering
 
+from config import get_section, load_config, resolve, resolve_path
+
 logger = logging.getLogger(__name__)
 
 
-def load_similarity_config(config_path: Path) -> dict[str, dict | float]:
-    if not config_path.exists():
-        raise FileNotFoundError(f"Config missing: {config_path}")
-    payload = json.loads(config_path.read_text())
+def load_similarity_config(config: dict[str, dict | float]) -> dict[str, dict | float]:
     similarity = {
-        "metric": payload.get("metric", "cosine"),
-        "transform": payload.get("transform", "reciprocal"),
-        "scale": float(payload.get("scale", 1.0)),
-        "epsilon": float(payload.get("epsilon", 1e-6)),
+        "metric": config.get("metric", "cosine"),
+        "transform": config.get("transform", "reciprocal"),
+        "scale": float(config.get("scale", 1.0)),
+        "epsilon": float(config.get("epsilon", 1e-6)),
     }
     similarity["hdbscan"] = {
-        "min_cluster_size": int(payload.get("hdbscan", {}).get("min_cluster_size", 3)),
-        "min_samples": int(payload.get("hdbscan", {}).get("min_samples", 3)),
+        "min_cluster_size": int(config.get("hdbscan", {}).get("min_cluster_size", 3)),
+        "min_samples": int(config.get("hdbscan", {}).get("min_samples", 3)),
     }
     similarity["cluster_split"] = {
         "max_cluster_size": int(
-            payload.get("cluster_split", {}).get("max_cluster_size", 40)
+            config.get("cluster_split", {}).get("max_cluster_size", 40)
         ),
         "distance_threshold": float(
-            payload.get("cluster_split", {}).get("distance_threshold", 0.25)
+            config.get("cluster_split", {}).get("distance_threshold", 0.25)
         ),
     }
     return similarity
@@ -90,10 +90,10 @@ def remap_clusters(
     return final_labels
 
 
-def main(fused_dir: Path, out_dir: Path, config_path: Path):
+def main(fused_dir: Path, out_dir: Path, similarity_cfg: dict[str, Any]):
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    config = load_similarity_config(config_path)
+    config = load_similarity_config(similarity_cfg)
     metric = config["metric"]
     hdbscan_cfg = config["hdbscan"]
 
@@ -148,22 +148,28 @@ def main(fused_dir: Path, out_dir: Path, config_path: Path):
 
 
 if __name__ == "__main__":
-    import argparse
-
     ap = argparse.ArgumentParser()
-    ap.add_argument("--fused-dir", type=Path, default=Path("data/embeddings/fused"))
-    ap.add_argument("--out-dir", type=Path, default=Path("data/clusters"))
-    ap.add_argument("--config", type=Path, default=Path("configs/similarity.json"))
-    ap.add_argument("--log-file", type=Path, default=Path("logs/cluster_entities.log"))
+    ap.add_argument("--config", type=Path, default=Path("configs/config.json"))
+    ap.add_argument("--fused-dir", type=Path, default=None)
+    ap.add_argument("--out-dir", type=Path, default=None)
+    ap.add_argument("--log-file", type=Path, default=None)
     args = ap.parse_args()
 
+    cfg = load_config(args.config)
+    section = get_section(cfg, "cluster_entities")
+
+    fused_dir = resolve_path(resolve(args.fused_dir, section.get("fused_dir")))
+    out_dir = resolve_path(resolve(args.out_dir, section.get("out_dir")))
+    log_file = resolve_path(resolve(args.log_file, section.get("log_file")))
+    similarity_cfg = section.get("similarity", {})
+
     logging.basicConfig(
-        filename=args.log_file,
+        filename=log_file,
         filemode="w",
         format="%(asctime)s - %(levelname)s - %(message)s",
         level=logging.INFO,
     )
 
     logger.info("Starting clustering process")
-    main(args.fused_dir, args.out_dir, args.config)
+    main(fused_dir, out_dir, similarity_cfg)
     logger.info("Clustering process complete")

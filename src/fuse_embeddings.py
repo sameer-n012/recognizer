@@ -6,6 +6,8 @@ from pathlib import Path
 import numpy as np
 from tqdm import tqdm
 
+from config import get_section, load_config, resolve, resolve_path
+
 logger = logging.getLogger(__name__)
 
 FUSION_WEIGHTS_CONFIG = {
@@ -86,38 +88,54 @@ def main(
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--entities-dir", type=Path, default=Path("data/entities"))
-    ap.add_argument("--face-dir", type=Path, default=Path("data/embeddings/face"))
-    ap.add_argument("--body-dir", type=Path, default=Path("data/embeddings/body"))
-    ap.add_argument("--clip-dir", type=Path, default=Path("data/embeddings/clip"))
-    ap.add_argument("--out-dir", type=Path, default=Path("data/embeddings/fused"))
-    ap.add_argument("--log-file", type=Path, default=Path("logs/fuse_embeddings.log"))
-    ap.add_argument("--face-weights", nargs=3, type=float, default=[0.6, 0.25, 0.15])
-    ap.add_argument("--no-face-weights", nargs=3, type=float, default=[0.0, 0.65, 0.35])
-    ap.add_argument("--no-person-weights", nargs=3, type=float, default=[0.0, 0.0, 1.0])
+    ap.add_argument("--config", type=Path, default=Path("configs/config.json"))
+    ap.add_argument("--entities-dir", type=Path, default=None)
+    ap.add_argument("--face-dir", type=Path, default=None)
+    ap.add_argument("--body-dir", type=Path, default=None)
+    ap.add_argument("--clip-dir", type=Path, default=None)
+    ap.add_argument("--out-dir", type=Path, default=None)
+    ap.add_argument("--log-file", type=Path, default=None)
+    ap.add_argument("--face-weights", nargs=3, type=float, default=None)
+    ap.add_argument("--no-face-weights", nargs=3, type=float, default=None)
+    ap.add_argument("--no-person-weights", nargs=3, type=float, default=None)
 
     args = ap.parse_args()
 
+    cfg = load_config(args.config)
+    section = get_section(cfg, "fuse_embeddings")
+
+    entities_dir = resolve_path(resolve(args.entities_dir, section.get("entities_dir")))
+    face_dir = resolve_path(resolve(args.face_dir, section.get("face_dir")))
+    body_dir = resolve_path(resolve(args.body_dir, section.get("body_dir")))
+    clip_dir = resolve_path(resolve(args.clip_dir, section.get("clip_dir")))
+    out_dir = resolve_path(resolve(args.out_dir, section.get("out_dir")))
+    log_file = resolve_path(resolve(args.log_file, section.get("log_file")))
+    face_weights = resolve(args.face_weights, section.get("face_weights"))
+    no_face_weights = resolve(args.no_face_weights, section.get("no_face_weights"))
+    no_person_weights = resolve(
+        args.no_person_weights, section.get("no_person_weights")
+    )
+
     weights = {
         "face_present": {
-            "face": args.face_weights[0],
-            "body": args.face_weights[1],
-            "clip": args.face_weights[2],
+            "face": face_weights[0],
+            "body": face_weights[1],
+            "clip": face_weights[2],
         },
         "no_face": {
-            "face": args.no_face_weights[0],
-            "body": args.no_face_weights[1],
-            "clip": args.no_face_weights[2],
+            "face": no_face_weights[0],
+            "body": no_face_weights[1],
+            "clip": no_face_weights[2],
         },
         "no_person": {
-            "face": args.no_person_weights[0],
-            "body": args.no_person_weights[1],
-            "clip": args.no_person_weights[2],
+            "face": no_person_weights[0],
+            "body": no_person_weights[1],
+            "clip": no_person_weights[2],
         },
     }
 
     logging.basicConfig(
-        filename=args.log_file,
+        filename=log_file,
         filemode="w",
         format="%(asctime)s - %(levelname)s - %(message)s",
         level=logging.INFO,
@@ -126,11 +144,11 @@ if __name__ == "__main__":
     logger.info("Starting embedding fusion process")
 
     main(
-        args.entities_dir,
-        args.face_dir,
-        args.body_dir,
-        args.clip_dir,
-        args.out_dir,
+        entities_dir,
+        face_dir,
+        body_dir,
+        clip_dir,
+        out_dir,
         weights,
     )
 

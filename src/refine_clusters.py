@@ -2,45 +2,34 @@ import argparse
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
 from sklearn.cluster import AgglomerativeClustering
 from sklearn.metrics.pairwise import cosine_similarity
 
+from config import get_section, load_config, resolve, resolve_path
+
 logger = logging.getLogger(__name__)
 
-DEFAULT_MERGE_THRESHOLD = 0.85
-DEFAULT_NOISE_THRESHOLD = 0.8
 
-
-def load_similarity_config(config_path: Path) -> dict[str, float]:
-    if not config_path.exists():
-        raise FileNotFoundError(f"Similarity config missing: {config_path}")
-    payload = json.loads(config_path.read_text())
+def load_similarity_config(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "metric": payload.get("metric", "cosine"),
-        "merge_threshold": float(
-            payload.get("merge_threshold", DEFAULT_MERGE_THRESHOLD)
-        ),
-        "noise_threshold": float(
-            payload.get("noise_threshold", DEFAULT_NOISE_THRESHOLD)
-        ),
-        "small_cluster_threshold": float(payload.get("small_cluster_threshold", 0.7)),
-        "small_cluster_max_size": int(payload.get("small_cluster_max_size", 2)),
-        "small_to_large_threshold": float(payload.get("small_to_large_threshold", 0.8)),
-        "large_cluster_max_size": int(payload.get("large_cluster_max_size", 60)),
+        "merge_threshold": float(payload["merge_threshold"]),
+        "noise_threshold": float(payload["noise_threshold"]),
+        "small_cluster_threshold": float(payload["small_cluster_threshold"]),
+        "small_cluster_max_size": int(payload["small_cluster_max_size"]),
+        "small_to_large_threshold": float(payload["small_to_large_threshold"]),
+        "large_cluster_max_size": int(payload["large_cluster_max_size"]),
         "large_cluster_distance_threshold": float(
-            payload.get("large_cluster_distance_threshold", 0.2)
+            payload["large_cluster_distance_threshold"]
         ),
-        "min_cluster_size": int(payload.get("min_cluster_size", 2)),
-        "min_cluster_force_threshold": float(
-            payload.get("min_cluster_force_threshold", 0.55)
-        ),
-        "force_reassign_singletons": bool(
-            payload.get("force_reassign_singletons", False)
-        ),
-        "force_reassign_noise": bool(payload.get("force_reassign_noise", False)),
+        "min_cluster_size": int(payload["min_cluster_size"]),
+        "min_cluster_force_threshold": float(payload["min_cluster_force_threshold"]),
+        "force_reassign_singletons": bool(payload["force_reassign_singletons"]),
+        "force_reassign_noise": bool(payload["force_reassign_noise"]),
     }
 
 
@@ -91,7 +80,7 @@ def build_merge_map(
 def main(
     cluster_dir: Path,
     out_dir: Path,
-    similarity_cfg_path: Path,
+    similarity_cfg: dict[str, Any],
     merge_threshold: float | None,
     noise_threshold: float | None,
 ):
@@ -103,7 +92,7 @@ def main(
     assignments = pd.read_parquet(assignments_path)
     centroids_dict = np.load(centroids_path, allow_pickle=True).item()
 
-    similarity_cfg = load_similarity_config(similarity_cfg_path)
+    similarity_cfg = load_similarity_config(similarity_cfg)
     merge_threshold = (
         merge_threshold
         if merge_threshold is not None
@@ -122,7 +111,7 @@ def main(
         "Merging clusters using %s metric (threshold %.3f) from %s",
         similarity_cfg["metric"],
         merge_threshold,
-        similarity_cfg_path,
+        "configs/config.json",
     )
     merged_map = build_merge_map(cluster_ids, centroid_matrix, merge_threshold)
 
@@ -380,20 +369,25 @@ def main(
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--cluster-dir", type=Path, default=Path("data/clusters"))
-    ap.add_argument("--out-dir", type=Path, default=Path("data/clusters/refined"))
-    ap.add_argument("--log-file", type=Path, default=Path("logs/cluster_entities.log"))
+    ap.add_argument("--config", type=Path, default=Path("configs/config.json"))
+    ap.add_argument("--cluster-dir", type=Path, default=None)
+    ap.add_argument("--out-dir", type=Path, default=None)
+    ap.add_argument("--log-file", type=Path, default=None)
     ap.add_argument("--merge-threshold", type=float, default=None)
     ap.add_argument("--noise-threshold", type=float, default=None)
-    ap.add_argument(
-        "--similarity-config",
-        type=Path,
-        default=Path("configs/similarity.json"),
-    )
     args = ap.parse_args()
 
+    cfg = load_config(args.config)
+    section = get_section(cfg, "refine_clusters")
+
+    cluster_dir = resolve_path(resolve(args.cluster_dir, section.get("cluster_dir")))
+    out_dir = resolve_path(resolve(args.out_dir, section.get("out_dir")))
+    log_file = resolve_path(resolve(args.log_file, section.get("log_file")))
+    merge_threshold = resolve(args.merge_threshold, section.get("merge_threshold"))
+    noise_threshold = resolve(args.noise_threshold, section.get("noise_threshold"))
+
     logging.basicConfig(
-        filename=args.log_file,
+        filename=log_file,
         filemode="w",
         format="%(asctime)s - %(levelname)s - %(message)s",
         level=logging.INFO,
@@ -401,13 +395,12 @@ if __name__ == "__main__":
 
     logger.info("Starting cluster refinement process")
 
-    similarity_cfg_path = args.similarity_config
     main(
-        args.cluster_dir,
-        args.out_dir,
-        similarity_cfg_path,
-        args.merge_threshold,
-        args.noise_threshold,
+        cluster_dir,
+        out_dir,
+        section,
+        merge_threshold,
+        noise_threshold,
     )
 
     logger.info("Cluster refinement process complete")

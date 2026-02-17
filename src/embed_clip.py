@@ -12,9 +12,10 @@ import torch
 import torch.nn.functional as F
 from tqdm import tqdm
 
+from config import get_section, load_config, resolve, resolve_path
+
 logger = logging.getLogger(__name__)
 
-BATCH_SIZE = 16
 CLIP_MEAN = torch.tensor([0.48145466, 0.4578275, 0.40821073])
 CLIP_STD = torch.tensor([0.26862954, 0.26130258, 0.27577711])
 
@@ -58,11 +59,15 @@ def main(
     index_path: Path,
     out_dir: Path,
     batch_size: int,
+    model_name: str,
+    pretrained: str,
 ) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
     device = "mps" if torch.backends.mps.is_available() else "cpu"
 
-    model, _, _ = open_clip.create_model_and_transforms("ViT-B-32", pretrained="openai")
+    model, _, _ = open_clip.create_model_and_transforms(
+        model_name, pretrained=pretrained
+    )
     model.eval().to(device)
 
     index_df = pd.read_parquet(index_path).set_index("asset_id")
@@ -146,17 +151,32 @@ def main(
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--entities-dir", type=Path, default=Path("data/entities"))
-    ap.add_argument("--frames-dir", type=Path, default=Path("data/frames"))
-    ap.add_argument("--index-path", type=Path, default=Path("cache/file_index.parquet"))
-    ap.add_argument("--out-dir", type=Path, default=Path("data/embeddings/clip"))
-    ap.add_argument("--log-file", type=Path, default=Path("logs/clip_embeddings.log"))
-    ap.add_argument("--batch-size", type=int, default=BATCH_SIZE)
+    ap.add_argument("--config", type=Path, default=Path("configs/config.json"))
+    ap.add_argument("--entities-dir", type=Path, default=None)
+    ap.add_argument("--frames-dir", type=Path, default=None)
+    ap.add_argument("--index-path", type=Path, default=None)
+    ap.add_argument("--out-dir", type=Path, default=None)
+    ap.add_argument("--log-file", type=Path, default=None)
+    ap.add_argument("--batch-size", type=int, default=None)
+    ap.add_argument("--model", type=str, default=None)
+    ap.add_argument("--pretrained", type=str, default=None)
 
     args = ap.parse_args()
 
+    cfg = load_config(args.config)
+    section = get_section(cfg, "embed_clip")
+
+    entities_dir = resolve_path(resolve(args.entities_dir, section.get("entities_dir")))
+    frames_dir = resolve_path(resolve(args.frames_dir, section.get("frames_dir")))
+    index_path = resolve_path(resolve(args.index_path, section.get("index_path")))
+    out_dir = resolve_path(resolve(args.out_dir, section.get("out_dir")))
+    log_file = resolve_path(resolve(args.log_file, section.get("log_file")))
+    batch_size = resolve(args.batch_size, section.get("batch_size"))
+    model_name = resolve(args.model, section.get("model"))
+    pretrained = resolve(args.pretrained, section.get("pretrained"))
+
     logging.basicConfig(
-        filename=args.log_file,
+        filename=log_file,
         filemode="w",
         format="%(asctime)s - %(levelname)s - %(message)s",
         level=logging.INFO,
@@ -164,10 +184,12 @@ if __name__ == "__main__":
 
     logger.info("Starting CLIP embedding extraction")
     main(
-        args.entities_dir,
-        args.frames_dir,
-        args.index_path,
-        args.out_dir,
-        args.batch_size,
+        entities_dir,
+        frames_dir,
+        index_path,
+        out_dir,
+        batch_size,
+        model_name,
+        pretrained,
     )
     logger.info("CLIP embedding extraction complete")

@@ -10,26 +10,23 @@ import torch
 import torchreid
 from tqdm import tqdm
 
-logger = logging.getLogger(__name__)
+from config import get_section, load_config, resolve, resolve_path
 
-DEFAULT_BODY_INPUT_SIZE = (256, 128)
-BATCH_SIZE = 16
+logger = logging.getLogger(__name__)
 
 
 def l2norm(x):
     return x / np.linalg.norm(x)
 
 
-def main(entities_dir, frames_dir, index_path, out_dir, input_size, batch_size):
+def main(entities_dir, frames_dir, index_path, out_dir, input_size, batch_size, model):
     out_dir.mkdir(parents=True, exist_ok=True)
 
     asset_df = pd.read_parquet(index_path).set_index("asset_id")
 
     device = "mps" if torch.backends.mps.is_available() else "cpu"
 
-    model = torchreid.models.build_model(
-        name="osnet_x1_0", num_classes=1, pretrained=True
-    )
+    model = torchreid.models.build_model(name=model, num_classes=1, pretrained=True)
     model.eval().to(device)
 
     h, w = input_size
@@ -84,27 +81,32 @@ def main(entities_dir, frames_dir, index_path, out_dir, input_size, batch_size):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--entities-dir", type=Path, default=Path("data/entities"))
-    ap.add_argument("--index", type=Path, default=Path("cache/file_index.parquet"))
-    ap.add_argument("--frames-dir", type=Path, default=Path("data/frames"))
-    ap.add_argument("--out-dir", type=Path, default=Path("data/embeddings/body"))
-    ap.add_argument("--log-file", type=Path, default=Path("logs/body_embeddings.log"))
-    ap.add_argument(
-        "--input-size",
-        type=int,
-        nargs=2,
-        default=DEFAULT_BODY_INPUT_SIZE,
-    )
-    ap.add_argument(
-        "--batch-size",
-        type=int,
-        default=BATCH_SIZE,
-    )
+    ap.add_argument("--config", type=Path, default=Path("configs/config.json"))
+    ap.add_argument("--entities-dir", type=Path, default=None)
+    ap.add_argument("--index", type=Path, default=None)
+    ap.add_argument("--frames-dir", type=Path, default=None)
+    ap.add_argument("--out-dir", type=Path, default=None)
+    ap.add_argument("--log-file", type=Path, default=None)
+    ap.add_argument("--input-size", type=int, nargs=2, default=None)
+    ap.add_argument("--batch-size", type=int, default=None)
+    ap.add_argument("--model", type=str, default=None)
 
     args = ap.parse_args()
 
+    cfg = load_config(args.config)
+    section = get_section(cfg, "embed_bodies")
+
+    entities_dir = resolve_path(resolve(args.entities_dir, section.get("entities_dir")))
+    index_path = resolve_path(resolve(args.index, section.get("index")))
+    frames_dir = resolve_path(resolve(args.frames_dir, section.get("frames_dir")))
+    out_dir = resolve_path(resolve(args.out_dir, section.get("out_dir")))
+    log_file = resolve_path(resolve(args.log_file, section.get("log_file")))
+    input_size = resolve(args.input_size, section.get("input_size"))
+    batch_size = resolve(args.batch_size, section.get("batch_size"))
+    model_name = resolve(args.model, section.get("model"))
+
     logging.basicConfig(
-        filename=args.log_file,
+        filename=log_file,
         filemode="w",
         format="%(asctime)s - %(levelname)s - %(message)s",
         level=logging.INFO,
@@ -113,12 +115,13 @@ if __name__ == "__main__":
     logger.info("Starting face detection process")
 
     main(
-        args.entities_dir,
-        args.frames_dir,
-        args.index,
-        args.out_dir,
-        args.input_size,
-        args.batch_size,
+        entities_dir,
+        frames_dir,
+        index_path,
+        out_dir,
+        input_size,
+        batch_size,
+        model_name,
     )
 
     logger.info("Body embeddings process complete")

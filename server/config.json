@@ -9,5 +9,5 @@
         "clip": "data/embeddings/clip",
         "fused": "data/embeddings/fused"
     },
-    "similarity_config": "configs/similarity.json"
+    "similarity_config": "configs/config.json"
 }
