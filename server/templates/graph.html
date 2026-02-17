@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Cluster Graph</title>
+        <link rel="stylesheet" href="/static/style.css" />
+    </head>
+    <body>
+        <div class="app-shell">
+            <aside id="sidebar">
+                <div class="sidebar-head">
+                    <div>
+                        <p class="eyebrow">Cluster graph</p>
+                        <h2>Clusters map</h2>
+                    </div>
+                    <a class="nav-link" href="/dashboard">Dashboard</a>
+                </div>
+                <p id="metric-tag" class="metric-tag">Graph view</p>
+                <div class="sidebar-scroll">
+                    <div class="panel mini-panel">
+                        <h3>Selection</h3>
+                        <p class="muted" id="selection-count">
+                            0 clusters selected
+                        </p>
+                        <p class="muted" id="asset-selection-count">
+                            0 assets selected
+                        </p>
+                        <div class="action-row">
+                            <button id="prev-node" class="action-btn secondary">
+                                Previous
+                            </button>
+                            <button id="next-node" class="action-btn secondary">
+                                Next
+                            </button>
+                        </div>
+                        <div class="action-row">
+                            <button id="undo-edit" class="action-btn secondary">
+                                Undo
+                            </button>
+                            <button id="redo-edit" class="action-btn secondary">
+                                Redo
+                            </button>
+                        </div>
+                        <div class="action-row">
+                            <button
+                                id="clear-selection"
+                                class="action-btn secondary"
+                            >
+                                Clear
+                            </button>
+                            <button id="zoom-fit" class="action-btn">
+                                Fit
+                            </button>
+                        </div>
+                    </div>
+                    <div class="panel mini-panel">
+                        <h3>Actions</h3>
+                        <p class="muted">
+                            Drag to pan. Shift + drag to box select. Alt + drag
+                            to lasso. Cmd/Ctrl click to multi-select. Right
+                            click a node for actions.
+                        </p>
+                    </div>
+                </div>
+            </aside>
+            <main id="content" class="graph-content">
+                <header class="graph-header">
+                    <div>
+                        <p class="eyebrow">Graph editor</p>
+                        <h1>Cluster projection</h1>
+                    </div>
+                    <div class="graph-controls">
+                        <input
+                            id="cluster-search"
+                            type="text"
+                            placeholder="Search cluster ID"
+                        />
+                        <button id="open-editor" class="action-btn secondary">
+                            Open editor
+                        </button>
+                    </div>
+                </header>
+                <section class="graph-shell">
+                    <div id="graph-canvas" class="graph-canvas"></div>
+                    <aside class="graph-panel">
+                        <h2 id="graph-panel-title">No cluster selected</h2>
+                        <p class="muted" id="graph-panel-subtitle">
+                            Select a node to inspect.
+                        </p>
+                        <div class="graph-panel-section">
+                            <h3>Cluster summary</h3>
+                            <div class="graph-summary-grid">
+                                <article>
+                                    <p class="label">Entities</p>
+                                    <h4 id="graph-cluster-size">–</h4>
+                                </article>
+                                <article>
+                                    <p class="label">Distinct assets</p>
+                                    <h4 id="graph-cluster-assets">–</h4>
+                                </article>
+                                <article>
+                                    <p class="label">Asset mix</p>
+                                    <p id="graph-asset-breakdown" class="muted">
+                                        –
+                                    </p>
+                                </article>
+                                <article>
+                                    <p class="label">Similarity metric</p>
+                                    <p
+                                        id="graph-metric-description"
+                                        class="muted"
+                                    >
+                                        –
+                                    </p>
+                                </article>
+                            </div>
+                        </div>
+                        <div class="graph-panel-section">
+                            <h3>Per-modality similarity</h3>
+                            <div
+                                id="graph-modality-stats"
+                                class="modality-grid"
+                            ></div>
+                        </div>
+                        <div class="graph-panel-section">
+                            <h3>Entities</h3>
+                            <div class="action-row">
+                                <button
+                                    id="graph-split"
+                                    class="action-btn danger"
+                                >
+                                    Split selected
+                                </button>
+                            </div>
+                            <div
+                                id="graph-entities"
+                                class="graph-entity-grid"
+                            ></div>
+                        </div>
+                    </aside>
+                </section>
+            </main>
+        </div>
+        <div id="context-menu" class="context-menu hidden">
+            <button data-action="merge">Merge clusters</button>
+            <button data-action="move">Move selected entities here</button>
+        </div>
+        <div id="hover-tooltip" class="hover-tooltip hidden">
+            <p id="tooltip-title"></p>
+            <img id="tooltip-image" alt="Cluster preview" />
+            <video id="tooltip-video" muted playsinline></video>
+        </div>
+        <div id="action-modal" class="modal hidden">
+            <div class="modal-card">
+                <h2 id="modal-title">Action</h2>
+                <p id="modal-description" class="muted"></p>
+                <div class="action-row">
+                    <button id="modal-confirm" class="action-btn">
+                        Confirm
+                    </button>
+                    <button id="modal-cancel" class="action-btn secondary">
+                        Cancel
+                    </button>
+                </div>
+            </div>
+        </div>
+        <script src="/static/graph.js"></script>
+    </body>
+</html>

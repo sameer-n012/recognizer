@@ -57,6 +57,23 @@ body {
     gap: 16px;
 }
 
+.nav-link {
+    border: 1px solid var(--border);
+    color: var(--muted);
+    text-decoration: none;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    transition:
+        border-color 0.2s ease,
+        color 0.2s ease;
+}
+
+.nav-link:hover {
+    border-color: var(--accent);
+    color: var(--text);
+}
+
 .sidebar-head h2 {
     margin: 0;
     font-size: 1.7rem;
@@ -152,6 +169,10 @@ body {
     overflow-y: auto;
 }
 
+#content.graph-content {
+    overflow: hidden;
+}
+
 .tab-bar {
     display: flex;
     gap: 10px;
@@ -177,6 +198,288 @@ body {
 
 .view-hidden {
     display: none;
+}
+
+.graph-content {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    overflow: hidden;
+}
+
+.graph-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+}
+
+.graph-controls {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.graph-controls input {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(8, 10, 18, 0.7);
+    color: var(--text);
+}
+
+.graph-shell {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.8fr);
+    gap: 18px;
+    flex: 1;
+    min-height: 0;
+    height: calc(100vh - 190px);
+}
+
+.graph-canvas {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.02);
+    overflow: hidden;
+    min-height: 480px;
+}
+
+.graph-canvas circle {
+    transform-box: fill-box;
+    transform-origin: center;
+}
+
+.graph-panel {
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 18px;
+    background: rgba(255, 255, 255, 0.02);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow-y: auto;
+}
+
+.graph-panel-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.graph-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 10px;
+}
+
+.graph-summary-grid article {
+    padding: 10px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--border);
+}
+
+.graph-summary-grid h4 {
+    margin: 6px 0 0;
+    font-size: 1.4rem;
+}
+
+.graph-entity-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 12px;
+}
+
+.graph-entity-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.graph-entity-card.selected {
+    border-color: var(--accent-2);
+}
+
+.node-merge {
+    animation: pulse-merge 0.6s ease;
+}
+
+.node-split {
+    animation: pulse-split 0.6s ease;
+}
+
+.node-move {
+    animation: pulse-move 0.6s ease;
+}
+
+@keyframes pulse-merge {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.15);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes pulse-split {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.12);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes pulse-move {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.08);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+.graph-entity-card img,
+.graph-entity-card video {
+    width: 100%;
+    height: 110px;
+    object-fit: cover;
+    display: block;
+}
+
+.graph-entity-meta {
+    padding: 8px 10px;
+    font-size: 0.8rem;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    align-items: center;
+}
+
+.graph-entity-meta button {
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--muted);
+    border-radius: 999px;
+    padding: 2px 8px;
+    cursor: pointer;
+}
+
+.context-menu {
+    position: fixed;
+    background: #0b0f1a;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 200;
+}
+
+.context-menu.hidden {
+    display: none;
+}
+
+.context-menu button {
+    background: transparent;
+    border: none;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 8px;
+}
+
+.context-menu button:hover {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.hover-tooltip {
+    position: fixed;
+    background: rgba(8, 10, 18, 0.95);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 10px;
+    z-index: 220;
+    width: 180px;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.hover-tooltip.hidden {
+    display: none;
+}
+
+.hover-tooltip p {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text);
+}
+
+.hover-tooltip img {
+    width: 100%;
+    height: 100px;
+    object-fit: cover;
+    border-radius: 8px;
+}
+
+.hover-tooltip video {
+    width: 100%;
+    height: 100px;
+    object-fit: cover;
+    border-radius: 8px;
+    display: none;
+}
+
+.modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(5, 6, 15, 0.7);
+    display: grid;
+    place-items: center;
+    z-index: 300;
+}
+
+.modal.hidden {
+    display: none;
+}
+
+.modal-card {
+    background: var(--panel);
+    border-radius: 18px;
+    border: 1px solid var(--border);
+    padding: 20px;
+    max-width: 360px;
+    width: 90%;
+}
+
+.selection-rect {
+    fill: rgba(100, 221, 255, 0.1);
+    stroke: var(--accent);
+    stroke-dasharray: 6 4;
+    pointer-events: none;
+}
+
+.selection-lasso {
+    fill: rgba(249, 115, 22, 0.1);
+    stroke: var(--accent-2);
+    pointer-events: none;
 }
 
 .cluster-header {
@@ -206,6 +509,11 @@ body {
     color: var(--muted);
 }
 
+.pill-link {
+    text-decoration: none;
+    color: var(--text);
+}
+
 .panel {
     margin-top: 24px;
     padding: 20px;
@@ -213,6 +521,11 @@ body {
     border-radius: 18px;
     border: 1px solid var(--border);
     box-shadow: 0 40px 120px rgba(5, 6, 15, 0.6);
+}
+
+.mini-panel {
+    margin-top: 18px;
+    padding: 14px;
 }
 
 .panel-title {
@@ -519,6 +832,9 @@ body {
     }
     .edit-actions {
         position: static;
+    }
+    .graph-shell {
+        grid-template-columns: 1fr;
     }
 }
 

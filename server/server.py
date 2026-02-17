@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from flask import Flask, jsonify, redirect, render_template, request, send_file, url_for
 from readerwriterlock import rwlock
+from sklearn.decomposition import PCA
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,8 @@ context = {
     "cluster_details": {},
     "cluster_centroids": {},
     "overrides": None,
+    "undo_stack": [],
+    "redo_stack": [],
     "similarity_metric": None,
     "config": load_config(),
     "lock": rwlock.RWLockFairD(),
@@ -269,6 +272,22 @@ def apply_overrides(assignments: pd.DataFrame, overrides: pd.DataFrame) -> pd.Da
     return merged.drop(columns=["cluster_id_override"])
 
 
+def serialize_overrides(overrides: pd.DataFrame) -> list[dict[str, Any]]:
+    if overrides.empty:
+        return []
+    return overrides[["entity_id", "cluster_id"]].to_dict(orient="records")
+
+
+def write_overrides(
+    overrides: pd.DataFrame, overrides_path: Path | None
+) -> pd.DataFrame:
+    if overrides_path is None:
+        raise ValueError("Overrides path not configured")
+    overrides_out = overrides.copy()
+    overrides_out.to_parquet(overrides_path, index=False)
+    return overrides_out
+
+
 def refresh_context():
     with context["lock"].gen_wlock():
         config = context["config"]
@@ -323,6 +342,12 @@ def index():
 def dashboard():
     logger.info("Dashboard page requested")
     return render_template("index.html")
+
+
+@app.route("/dashboard/graph")
+def dashboard_graph():
+    logger.info("Graph dashboard page requested")
+    return render_template("graph.html")
 
 
 @app.route("/api/refresh")
@@ -386,6 +411,53 @@ def get_cluster_suggestions(cluster_id: int):
     return jsonify({"clusters": scored[:limit]})
 
 
+@app.route("/api/cluster_graph")
+def get_cluster_graph():
+    with context["lock"].gen_rlock():
+        clusters = context["clusters_overview"]
+        centroids = context["cluster_centroids"]
+
+    fused_centroids = []
+    cluster_ids = []
+    sizes = {}
+    for cluster in clusters:
+        cid = int(cluster["cluster_id"])
+        centroid_map = centroids.get(cid, {})
+        fused = centroid_map.get("fused")
+        if fused is None:
+            continue
+        fused_centroids.append(fused)
+        cluster_ids.append(cid)
+        sizes[cid] = int(cluster["size"])
+
+    if not fused_centroids:
+        return jsonify({"nodes": []})
+
+    matrix = np.stack(fused_centroids)
+    if matrix.shape[0] == 1:
+        coords = np.array([[0.5, 0.5]])
+    else:
+        pca = PCA(n_components=2)
+        coords = pca.fit_transform(matrix)
+        min_vals = coords.min(axis=0)
+        max_vals = coords.max(axis=0)
+        span = np.where(max_vals - min_vals == 0, 1.0, max_vals - min_vals)
+        coords = (coords - min_vals) / span
+
+    nodes = []
+    for idx, cid in enumerate(cluster_ids):
+        nodes.append(
+            {
+                "cluster_id": cid,
+                "x": float(coords[idx, 0]),
+                "y": float(coords[idx, 1]),
+                "size": sizes.get(cid, 1),
+            }
+        )
+
+    return jsonify({"nodes": nodes})
+
+
 @app.route("/api/cluster/edit", methods=["POST"])
 def edit_cluster():
     payload = request.get_json(silent=True) or {}
@@ -402,6 +474,8 @@ def edit_cluster():
         overrides_map = {
             row["entity_id"]: int(row["cluster_id"]) for _, row in overrides.iterrows()
         }
+        context["undo_stack"].append(serialize_overrides(overrides))
+        context["redo_stack"].clear()
 
         if action == "move_entities":
             entity_ids = payload.get("entity_ids", [])
@@ -412,6 +486,18 @@ def edit_cluster():
                 ), 400
             for entity_id in entity_ids:
                 overrides_map[str(entity_id)] = int(target_cluster)
+        elif action == "merge_selected":
+            cluster_ids = payload.get("cluster_ids", [])
+            if not cluster_ids or len(cluster_ids) < 2:
+                return jsonify({"error": "Missing cluster_ids"}), 400
+            max_cluster = int(assignments["cluster_id"].max())
+            new_cluster_id = max_cluster + 1
+            target_entities = assignments[
+                assignments["cluster_id"].isin([int(cid) for cid in cluster_ids])
+            ]["entity_id"].tolist()
+            for entity_id in target_entities:
+                overrides_map[str(entity_id)] = new_cluster_id
+            payload["new_cluster_id"] = new_cluster_id
         elif action == "merge_clusters":
             source_cluster = payload.get("source_cluster_id")
             target_cluster = payload.get("target_cluster_id")
@@ -445,11 +531,49 @@ def edit_cluster():
         overrides_out = pd.DataFrame(
             [{"entity_id": k, "cluster_id": v} for k, v in overrides_map.items()]
         )
-        overrides_out.to_parquet(config["overrides_path"], index=False)
+        overrides_out = write_overrides(overrides_out, config["overrides_path"])
         context["overrides"] = overrides_out
 
     refresh_context()
     return jsonify({"status": "ok", "details": payload})
+
+
+@app.route("/api/cluster/undo", methods=["POST"])
+def undo_edit():
+    with context["lock"].gen_wlock():
+        config = context["config"]
+        if config["overrides_path"] is None:
+            return jsonify({"error": "Overrides path not configured"}), 500
+        if not context["undo_stack"]:
+            return jsonify({"error": "No undo steps available"}), 400
+        current_overrides = load_overrides(config["overrides_path"])
+        context["redo_stack"].append(serialize_overrides(current_overrides))
+        prev_state = context["undo_stack"].pop()
+        prev_df = pd.DataFrame(prev_state, columns=["entity_id", "cluster_id"])
+        prev_df = write_overrides(prev_df, config["overrides_path"])
+        context["overrides"] = prev_df
+
+    refresh_context()
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/cluster/redo", methods=["POST"])
+def redo_edit():
+    with context["lock"].gen_wlock():
+        config = context["config"]
+        if config["overrides_path"] is None:
+            return jsonify({"error": "Overrides path not configured"}), 500
+        if not context["redo_stack"]:
+            return jsonify({"error": "No redo steps available"}), 400
+        current_overrides = load_overrides(config["overrides_path"])
+        context["undo_stack"].append(serialize_overrides(current_overrides))
+        next_state = context["redo_stack"].pop()
+        next_df = pd.DataFrame(next_state, columns=["entity_id", "cluster_id"])
+        next_df = write_overrides(next_df, config["overrides_path"])
+        context["overrides"] = next_df
+
+    refresh_context()
+    return jsonify({"status": "ok"})
 
 
 @app.route("/media/<asset_id>")

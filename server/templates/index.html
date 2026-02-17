@@ -17,23 +17,12 @@
                         <span>⟳</span>
                     </button>
                 </div>
-                <p id="metric-tag" class="metric-tag">
-                    Loading similarity metric…
-                </p>
+                <p id="metric-tag" class="metric-tag"></p>
                 <div class="sidebar-scroll">
                     <ul id="cluster-list"></ul>
                 </div>
             </aside>
             <main id="content">
-                <div class="tab-bar">
-                    <button class="tab-button active" data-tab="dashboard">
-                        Dashboard
-                    </button>
-                    <button class="tab-button" data-tab="edit">
-                        Edit clusters
-                    </button>
-                </div>
-
                 <section id="dashboard-view" class="view-panel">
                     <header class="cluster-header">
                         <div>
@@ -50,6 +39,9 @@
                             >
                             <span id="cluster-asset-pill" class="pill"
                                 >Assets • –</span
+                            >
+                            <a class="pill pill-link" href="/dashboard/graph"
+                                >Open graph</a
                             >
                         </div>
                     </header>
@@ -105,90 +97,6 @@
                             <p class="placeholder">No cluster selected yet.</p>
                         </div>
                     </section>
-                </section>
-
-                <section id="edit-view" class="view-panel view-hidden">
-                    <header class="cluster-header">
-                        <div>
-                            <p class="eyebrow">Cluster editor</p>
-                            <h1 id="edit-cluster-title">
-                                Select a cluster to edit
-                            </h1>
-                        </div>
-                        <div class="cluster-pills">
-                            <span id="edit-cluster-size-pill" class="pill"
-                                >Selected • 0</span
-                            >
-                            <span id="edit-cluster-total-pill" class="pill"
-                                >Entities • –</span
-                            >
-                        </div>
-                    </header>
-
-                    <div class="edit-layout">
-                        <section class="panel edit-panel">
-                            <div class="panel-title">
-                                <h2>Entities in this cluster</h2>
-                                <p class="muted">
-                                    Select entities to move into another cluster
-                                    or split into a new cluster.
-                                </p>
-                            </div>
-                            <div id="edit-item-grid" class="cards-grid">
-                                <p class="placeholder">
-                                    No cluster selected yet.
-                                </p>
-                            </div>
-                        </section>
-
-                        <aside class="panel edit-panel edit-actions">
-                            <div class="panel-title">
-                                <h2>Cluster actions</h2>
-                                <p class="muted">
-                                    Closest clusters are suggested first.
-                                    Actions apply to the selected entities.
-                                </p>
-                            </div>
-                            <div class="action-block">
-                                <h3>Suggested targets</h3>
-                                <div
-                                    id="suggested-clusters"
-                                    class="suggested-list"
-                                ></div>
-                            </div>
-                            <div class="action-block">
-                                <h3>Manual target</h3>
-                                <input
-                                    id="manual-cluster-id"
-                                    type="number"
-                                    placeholder="Cluster ID"
-                                />
-                                <div class="action-row">
-                                    <button
-                                        id="move-to-manual"
-                                        class="action-btn"
-                                    >
-                                        Move selected
-                                    </button>
-                                    <button
-                                        id="merge-with-manual"
-                                        class="action-btn secondary"
-                                    >
-                                        Merge cluster
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="action-block">
-                                <h3>Split selection</h3>
-                                <button
-                                    id="split-selection"
-                                    class="action-btn danger"
-                                >
-                                    Split selected into new cluster
-                                </button>
-                            </div>
-                        </aside>
-                    </div>
                 </section>
             </main>
         </div>

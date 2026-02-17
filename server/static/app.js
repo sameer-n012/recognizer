@@ -11,35 +11,20 @@ const clusterAssetPill = document.getElementById("cluster-asset-pill");
 const modalityStatsEl = document.getElementById("modality-stats");
 const itemGridEl = document.getElementById("item-grid");
 const refreshButton = document.getElementById("refresh-button");
-const tabButtons = document.querySelectorAll(".tab-button");
-const dashboardView = document.getElementById("dashboard-view");
-const editView = document.getElementById("edit-view");
-const editClusterTitleEl = document.getElementById("edit-cluster-title");
-const editClusterSizePill = document.getElementById("edit-cluster-size-pill");
-const editClusterTotalPill = document.getElementById("edit-cluster-total-pill");
-const editItemGridEl = document.getElementById("edit-item-grid");
-const suggestedClustersEl = document.getElementById("suggested-clusters");
-const manualClusterInput = document.getElementById("manual-cluster-id");
-const moveManualButton = document.getElementById("move-to-manual");
-const mergeManualButton = document.getElementById("merge-with-manual");
-const splitSelectionButton = document.getElementById("split-selection");
-
 let clustersCache = [];
 let metricInfo = null;
 let activeClusterId = null;
-let activeTab = "dashboard";
-let selectedEntityIds = new Set();
 
 const formatSimilarity = (value) =>
     value === null || value === undefined ? "–" : value.toFixed(2);
 
 const renderMetricTag = () => {
     if (!metricInfo) {
-        metricTagEl.textContent = "Similarity metric unknown";
+        metricTagEl.textContent = "";
         metricDescriptionEl.textContent = "";
         return;
     }
-    metricTagEl.textContent = `${metricInfo.transform.toUpperCase()}(${metricInfo.metric})`;
+    metricTagEl.textContent = "";
     metricDescriptionEl.textContent = `Transform: ${metricInfo.transform}, metric: ${metricInfo.metric}, scale: ${metricInfo.scale}`;
 };
 
@@ -166,181 +151,6 @@ const renderItems = (items = []) => {
     });
 };
 
-const setActiveTab = (tab) => {
-    activeTab = tab;
-    tabButtons.forEach((btn) => {
-        btn.classList.toggle("active", btn.dataset.tab === tab);
-    });
-    dashboardView.classList.toggle("view-hidden", tab !== "dashboard");
-    editView.classList.toggle("view-hidden", tab !== "edit");
-};
-
-const renderEditItems = (items = []) => {
-    editItemGridEl.innerHTML = "";
-    if (!items.length) {
-        editItemGridEl.innerHTML =
-            "<p class='placeholder'>No assets were found for this cluster.</p>";
-        return;
-    }
-    items.forEach((item) => {
-        const card = document.createElement("article");
-        card.className = "entity-card selectable";
-        card.dataset.entityId = item.entity_id;
-        const media = createMediaElement(item);
-        const info = document.createElement("div");
-        info.className = "card-info";
-        info.innerHTML = `
-      <p class="card-title">Entity ${item.entity_id}</p>
-      <p class="card-subtitle">${item.asset_basename} · ${item.asset_type}</p>
-      <div class="card-meta">
-        <span>${item.frame_count} frames</span>
-        <span>${item.faces_total} faces</span>
-      </div>
-    `;
-        const toggle = document.createElement("button");
-        toggle.className = "select-toggle";
-        toggle.innerHTML = "<span>○</span><span>Select</span>";
-        toggle.onclick = (event) => {
-            event.stopPropagation();
-            toggleSelection(item.entity_id, card, toggle);
-        };
-        card.appendChild(toggle);
-        card.appendChild(media);
-        card.appendChild(info);
-        card.onclick = () => window.open(`/media/${item.asset_id}`, "_blank");
-        editItemGridEl.appendChild(card);
-    });
-    syncSelectionState();
-};
-
-const toggleSelection = (entityId, card, toggle) => {
-    if (selectedEntityIds.has(entityId)) {
-        selectedEntityIds.delete(entityId);
-    } else {
-        selectedEntityIds.add(entityId);
-    }
-    card.classList.toggle("selected", selectedEntityIds.has(entityId));
-    toggle.innerHTML = selectedEntityIds.has(entityId)
-        ? "<span>●</span><span>Selected</span>"
-        : "<span>○</span><span>Select</span>";
-    updateSelectionPills();
-};
-
-const syncSelectionState = () => {
-    document.querySelectorAll(".entity-card.selectable").forEach((card) => {
-        const entityId = card.dataset.entityId;
-        const toggle = card.querySelector(".select-toggle");
-        const selected = selectedEntityIds.has(entityId);
-        card.classList.toggle("selected", selected);
-        if (toggle) {
-            toggle.innerHTML = selected
-                ? "<span>●</span><span>Selected</span>"
-                : "<span>○</span><span>Select</span>";
-        }
-    });
-    updateSelectionPills();
-};
-
-const updateSelectionPills = () => {
-    editClusterSizePill.textContent = `Selected • ${selectedEntityIds.size}`;
-    const disabled = selectedEntityIds.size === 0;
-    moveManualButton.disabled = disabled;
-    mergeManualButton.disabled = disabled;
-    splitSelectionButton.disabled = disabled;
-};
-
-const renderSuggestedClusters = (suggestions = []) => {
-    suggestedClustersEl.innerHTML = "";
-    if (!suggestions.length) {
-        suggestedClustersEl.innerHTML =
-            "<p class='placeholder'>No suggestions available.</p>";
-        return;
-    }
-    suggestions.forEach((item) => {
-        const row = document.createElement("div");
-        row.className = "suggested-item";
-        row.innerHTML = `
-      <strong>Cluster ${item.cluster_id}</strong>
-      <span>Similarity ${formatSimilarity(item.similarity)}</span>
-    `;
-        const moveButton = document.createElement("button");
-        moveButton.className = "action-btn";
-        moveButton.textContent = "Move selected";
-        moveButton.disabled = selectedEntityIds.size === 0;
-        moveButton.onclick = () => moveSelectedEntities(item.cluster_id);
-        const mergeButton = document.createElement("button");
-        mergeButton.className = "action-btn secondary";
-        mergeButton.textContent = "Merge cluster";
-        mergeButton.onclick = () => mergeClusters(item.cluster_id);
-        row.appendChild(moveButton);
-        row.appendChild(mergeButton);
-        suggestedClustersEl.appendChild(row);
-    });
-};
-
-const loadSuggestions = async (clusterId) => {
-    const res = await fetch(`/api/cluster/${clusterId}/suggestions?limit=8`);
-    if (!res.ok) {
-        return;
-    }
-    const data = await res.json();
-    renderSuggestedClusters(data.clusters || []);
-};
-
-const postEditAction = async (payload) => {
-    const res = await fetch("/api/cluster/edit", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
-    if (!res.ok) {
-        return null;
-    }
-    return res.json();
-};
-
-const moveSelectedEntities = async (targetClusterId) => {
-    if (!selectedEntityIds.size || targetClusterId === null) return;
-    await postEditAction({
-        action: "move_entities",
-        entity_ids: Array.from(selectedEntityIds),
-        target_cluster_id: Number(targetClusterId),
-    });
-    selectedEntityIds.clear();
-    await loadClusters();
-    if (activeClusterId !== null) {
-        await loadCluster(activeClusterId);
-    }
-};
-
-const mergeClusters = async (targetClusterId) => {
-    if (activeClusterId === null || targetClusterId === null) return;
-    await postEditAction({
-        action: "merge_clusters",
-        source_cluster_id: Number(activeClusterId),
-        target_cluster_id: Number(targetClusterId),
-    });
-    selectedEntityIds.clear();
-    await loadClusters();
-    await loadCluster(targetClusterId);
-};
-
-const splitSelectedEntities = async () => {
-    if (!selectedEntityIds.size || activeClusterId === null) return;
-    const response = await postEditAction({
-        action: "split_cluster",
-        source_cluster_id: Number(activeClusterId),
-        entity_ids: Array.from(selectedEntityIds),
-    });
-    selectedEntityIds.clear();
-    await loadClusters();
-    if (response?.details?.new_cluster_id !== undefined) {
-        await loadCluster(response.details.new_cluster_id);
-    } else if (activeClusterId !== null) {
-        await loadCluster(activeClusterId);
-    }
-};
-
 const loadCluster = async (clusterId) => {
     activeClusterId = clusterId;
     highlightActiveCluster();
@@ -352,10 +162,6 @@ const loadCluster = async (clusterId) => {
     renderClusterSummary(data.summary);
     renderModalityStats(data.summary);
     renderItems(data.items);
-    editClusterTitleEl.textContent = `Editing Cluster ${data.summary.cluster_id}`;
-    editClusterTotalPill.textContent = `Entities • ${data.summary.size}`;
-    renderEditItems(data.items);
-    await loadSuggestions(clusterId);
 };
 
 const loadClusters = async () => {
@@ -388,22 +194,10 @@ const refreshClusters = async () => {
 };
 
 refreshButton.addEventListener("click", refreshClusters);
-tabButtons.forEach((button) => {
-    button.addEventListener("click", () => {
-        setActiveTab(button.dataset.tab);
-    });
-});
-moveManualButton.addEventListener("click", () => {
-    const target = manualClusterInput.value;
-    if (!target) return;
-    moveSelectedEntities(Number(target));
-});
-mergeManualButton.addEventListener("click", () => {
-    const target = manualClusterInput.value;
-    if (!target) return;
-    mergeClusters(Number(target));
-});
-splitSelectionButton.addEventListener("click", splitSelectedEntities);
-
 loadClusters();
-setActiveTab("dashboard");
+
+const params = new URLSearchParams(window.location.search);
+const initialCluster = params.get("cluster_id");
+if (initialCluster) {
+    loadCluster(Number(initialCluster));
+}
