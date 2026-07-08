@@ -12,3 +12,6 @@ scratch/
 *.pt
 
 test_data/
+
+__pycache__/
+*.pyc

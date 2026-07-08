@@ -7,8 +7,8 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     rm data/clusters/*.npy
     rm data/clusters/*.parquet
 
-    # rm data/detections/faces/*
-    # rm data/detections/persons/*
+    rm data/detections/faces/*
+    rm data/detections/persons/*
 
     rm data/embeddings/body/*
     rm data/embeddings/clip/*
@@ -17,10 +17,10 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
 
     rm data/entities/*.json
 
-    # rm -rf data/frames/*
+    rm -rf data/frames/*
 
-    # rm data/raw/images/*
-    # rm data/raw/videos/*
+    rm data/raw/images/*
+    rm data/raw/videos/*
 
     echo "All files in the data directory have been deleted."
 fi
