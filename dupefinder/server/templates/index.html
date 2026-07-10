@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <title>Duplicate Review</title>
+        <link rel="stylesheet" href="/static/style.css" />
+    </head>
+    <body>
+        <div class="app-shell">
+            <header class="top-bar">
+                <div>
+                    <p class="eyebrow">Dupefinder</p>
+                    <h1>Duplicate buckets</h1>
+                </div>
+                <div class="top-bar-stats">
+                    <span id="group-count-pill" class="pill">Buckets • –</span>
+                    <span id="asset-count-pill" class="pill">Assets • –</span>
+                    <span id="singleton-count-pill" class="pill">Singletons • –</span>
+                </div>
+                <div class="top-bar-actions">
+                    <label class="toggle">
+                        <input type="checkbox" id="singleton-toggle" />
+                        <span>Show singletons</span>
+                    </label>
+                    <button id="merge-button" class="action-btn" disabled>
+                        Merge selected
+                    </button>
+                    <button id="undo-button" class="action-btn secondary">
+                        Undo
+                    </button>
+                    <button id="redo-button" class="action-btn secondary">
+                        Redo
+                    </button>
+                    <button id="refresh-button" class="action-btn secondary">
+                        Refresh
+                    </button>
+                </div>
+            </header>
+            <p id="hint" class="hint">
+                Select two or more buckets to merge them. Click an item to
+                open it in a new tab. Hover an item and click ✕ to remove it
+                from its bucket — nothing is ever deleted or moved on disk,
+                this only updates which bucket an item belongs to. "Show
+                singletons" also reveals files the pipeline never matched to
+                anything — merge one into a bucket if you spot a duplicate it
+                missed.
+            </p>
+            <main id="bucket-grid" class="bucket-grid">
+                <p class="placeholder">Loading buckets…</p>
+            </main>
+        </div>
+        <script src="/static/app.js"></script>
+    </body>
+</html>

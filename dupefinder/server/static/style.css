@@ -1,0 +1,292 @@
+:root {
+    --bg-primary: #04070d;
+    --bg-secondary: #111827;
+    --accent: #64ddff;
+    --accent-2: #f97316;
+    --panel: #111827;
+    --text: #edf2f7;
+    --muted: #9ca3af;
+    --border: rgba(255, 255, 255, 0.08);
+    font-family: "Space Grotesk", "Inter", system-ui, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+}
+
+body {
+    margin: 0;
+    min-height: 100vh;
+    background:
+        radial-gradient(
+            circle at top right,
+            rgba(100, 221, 255, 0.2),
+            transparent 40%
+        ),
+        radial-gradient(
+            circle at bottom left,
+            rgba(249, 115, 22, 0.25),
+            transparent 45%
+        ),
+        var(--bg-primary);
+    color: var(--text);
+}
+
+.app-shell {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 32px;
+}
+
+.top-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.eyebrow {
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.3em;
+    color: var(--muted);
+    margin: 0 0 6px;
+}
+
+.top-bar h1 {
+    margin: 0;
+    font-size: 2rem;
+}
+
+.top-bar-stats {
+    display: flex;
+    gap: 10px;
+}
+
+.pill {
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+.top-bar-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0 4px;
+}
+
+.toggle input {
+    cursor: pointer;
+}
+
+.action-btn {
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    padding: 10px 16px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition:
+        border-color 0.2s ease,
+        color 0.2s ease,
+        opacity 0.2s ease;
+}
+
+.action-btn:hover:not(:disabled) {
+    border-color: var(--accent);
+}
+
+.action-btn.secondary {
+    border-color: rgba(255, 255, 255, 0.2);
+    color: var(--muted);
+}
+
+.action-btn:disabled {
+    opacity: 0.35;
+    cursor: not-allowed;
+}
+
+.hint {
+    margin: 18px 0 0;
+    color: var(--muted);
+    font-size: 0.88rem;
+    max-width: 780px;
+}
+
+.bucket-grid {
+    margin-top: 28px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 20px;
+}
+
+.placeholder {
+    color: var(--muted);
+    font-style: italic;
+}
+
+.bucket-card {
+    background: var(--panel);
+    border-radius: 18px;
+    border: 1px solid var(--border);
+    box-shadow: 0 30px 90px rgba(5, 6, 15, 0.5);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    transition: border-color 0.2s ease;
+}
+
+.bucket-card.selected {
+    border-color: var(--accent-2);
+    box-shadow: 0 0 0 1px rgba(249, 115, 22, 0.5);
+}
+
+.bucket-card.singleton {
+    opacity: 0.75;
+}
+
+.bucket-card.singleton .bucket-title::after {
+    content: "singleton";
+    margin-left: 8px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--muted);
+    font-size: 0.65rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.bucket-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    gap: 10px;
+}
+
+.bucket-head label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    color: var(--muted);
+    cursor: pointer;
+}
+
+.bucket-head .bucket-title {
+    font-weight: 600;
+    color: var(--text);
+}
+
+.bucket-size {
+    font-size: 0.8rem;
+    color: var(--muted);
+}
+
+.bucket-items {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+    gap: 8px;
+    padding: 14px 16px 16px;
+}
+
+/* Invisible IntersectionObserver trigger — spans the full row in whichever grid it's
+   in (#bucket-grid for paging buckets, .bucket-items for paging a bucket's members)
+   so it doesn't get squeezed into a single card/thumbnail-sized cell. */
+.scroll-sentinel {
+    grid-column: 1 / -1;
+    height: 1px;
+}
+
+.item-thumb {
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: rgba(255, 255, 255, 0.02);
+    aspect-ratio: 1 / 1;
+}
+
+.item-thumb a {
+    display: block;
+    width: 100%;
+    height: 100%;
+    cursor: pointer;
+}
+
+.item-thumb img,
+.item-thumb video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.item-remove {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(5, 6, 15, 0.75);
+    color: var(--text);
+    cursor: pointer;
+    font-size: 0.8rem;
+    line-height: 1;
+    display: grid;
+    place-items: center;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+}
+
+.item-thumb:hover .item-remove {
+    opacity: 1;
+}
+
+.item-remove:hover {
+    background: var(--accent-2);
+}
+
+.keeper-badge {
+    position: absolute;
+    bottom: 4px;
+    left: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(100, 221, 255, 0.85);
+    color: #04070d;
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+}
+
+@media (max-width: 700px) {
+    .app-shell {
+        padding: 20px;
+    }
+    .top-bar {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}

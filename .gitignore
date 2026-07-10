@@ -6,6 +6,7 @@ YOLOX/
 ByteTrack/
 
 scratch/
+CLAUDE.md
 
 .env
 *.log

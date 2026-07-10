@@ -1,0 +1,97 @@
+{
+    "paths": {
+        "index": "cache/file_index.parquet",
+        "frames_sparse_dir": "data/frames_sparse",
+        "frames_dense_dir": "data/frames_dense",
+        "hashes": "data/hashes/hashes.parquet",
+        "clip_coarse_dir": "data/embeddings/clip_coarse",
+        "clip_dense_dir": "data/embeddings/clip_dense",
+        "exact_groups": "data/duplicates/exact_groups.parquet",
+        "near_dup_groups": "data/duplicates/near_dup_groups.parquet",
+        "candidates_dir": "data/candidates",
+        "duplicates_dir": "data/duplicates"
+    },
+    "index_files": {
+        "input_dir": null,
+        "out": "cache/file_index.parquet",
+        "log_file": "logs/index_files.log"
+    },
+    "exact_duplicates": {
+        "index": "cache/file_index.parquet",
+        "out": "data/duplicates/exact_groups.parquet",
+        "log_file": "logs/exact_duplicates.log"
+    },
+    "coarse_signature": {
+        "index": "cache/file_index.parquet",
+        "exact_groups": "data/duplicates/exact_groups.parquet",
+        "frames_dir": "data/frames_sparse",
+        "hashes_out": "data/hashes/hashes.parquet",
+        "clip_out_dir": "data/embeddings/clip_coarse",
+        "log_file": "logs/coarse_signature.log",
+        "max_frames": 20,
+        "max_frame_rate": 1.0,
+        "hash_size": 8,
+        "model": "ViT-B-32",
+        "pretrained": "openai",
+        "batch_size": 16
+    },
+    "near_duplicates": {
+        "exact_groups": "data/duplicates/exact_groups.parquet",
+        "hashes": "data/hashes/hashes.parquet",
+        "out": "data/duplicates/near_dup_groups.parquet",
+        "log_file": "logs/near_duplicates.log",
+        "ahash_threshold": 2,
+        "dhash_threshold": 2,
+        "phash_threshold": 2,
+        "min_frame_match_ratio": 0.8
+    },
+    "build_candidates": {
+        "index": "cache/file_index.parquet",
+        "exact_groups": "data/duplicates/exact_groups.parquet",
+        "near_dup_groups": "data/duplicates/near_dup_groups.parquet",
+        "clip_dir": "data/embeddings/clip_coarse",
+        "out": "data/candidates/pairs.parquet",
+        "log_file": "logs/build_candidates.log",
+        "top_k": 5,
+        "similarity_floor": 0.85
+    },
+    "match_pairs": {
+        "index": "cache/file_index.parquet",
+        "candidates": "data/candidates/pairs.parquet",
+        "clip_dir": "data/embeddings/clip_coarse",
+        "out": "data/candidates/scored_pairs.parquet",
+        "log_file": "logs/match_pairs.log",
+        "resolve_threshold": 0.98,
+        "escalate_threshold": 0.95
+    },
+    "match_video_pairs": {
+        "index": "cache/file_index.parquet",
+        "scored_pairs": "data/candidates/scored_pairs.parquet",
+        "frames_dense_dir": "data/frames_dense",
+        "clip_dense_dir": "data/embeddings/clip_dense",
+        "out": "data/candidates/video_alignment.parquet",
+        "log_file": "logs/match_video_pairs.log",
+        "dense_interval_sec": 0.5,
+        "model": "ViT-B-32",
+        "pretrained": "openai",
+        "align_similarity_threshold": 0.95,
+        "min_overlap_frames": 8,
+        "min_overlap_ratio": 0.6
+    },
+    "cluster_duplicates": {
+        "index": "cache/file_index.parquet",
+        "exact_groups": "data/duplicates/exact_groups.parquet",
+        "near_dup_groups": "data/duplicates/near_dup_groups.parquet",
+        "scored_pairs": "data/candidates/scored_pairs.parquet",
+        "video_alignment": "data/candidates/video_alignment.parquet",
+        "out": "data/duplicates/groups.parquet",
+        "log_file": "logs/cluster_duplicates.log"
+    },
+    "rank_group_members": {
+        "index": "cache/file_index.parquet",
+        "groups": "data/duplicates/groups.parquet",
+        "out": "data/duplicates/ranked.parquet",
+        "log_file": "logs/rank_group_members.log",
+        "duration_epsilon_seconds": 1.5
+    }
+}
